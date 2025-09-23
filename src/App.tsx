@@ -306,6 +306,9 @@ export default function App() {
   const [accounts, setAccounts] = useState(22000);
   const [avgCams, setAvgCams] = useState(1);
   const [cloudShare, setCloudShare] = useState(0.2); // 0..1 доля текущих аккаунтов с облаком
+  // Распределение текущей базы: платящие vs бесплатные, и сплит по семействам
+  const [paidSplit, setPaidSplit] = useState({ camera: 0.6, smarthome: 0.2, bundle: 0.2 });
+  const [freeSplit, setFreeSplit] = useState({ camera: 0.7, smarthome: 0.3 });
   const [cdnRatio, setCdnRatio] = useState(0.3);
   const [liveHours, setLiveHours] = useState(1);
   const [relayShare, setRelayShare] = useState(0.2);
@@ -566,7 +569,13 @@ export default function App() {
   // Derived counts
   const camsTotal = useMemo(() => Math.round(accounts * avgCams), [accounts, avgCams]);
   const cloudAccounts = useMemo(() => Math.round(accounts * cloudShare), [accounts, cloudShare]);
-  const camsCloud = useMemo(() => Math.round(cloudAccounts * avgCams), [cloudAccounts, avgCams]);
+  // Камеры у платящих (оценка): платные камеры + платные bundle
+  const camsCloud = useMemo(() => {
+    const paid = Math.round(accounts * cloudShare);
+    const camPaid = Math.round(paid * (paidSplit?.camera || 0));
+    const bundlePaid = Math.round(paid * (paidSplit?.bundle || 0));
+    return Math.round((camPaid + bundlePaid) * avgCams);
+  }, [accounts, cloudShare, paidSplit, avgCams]);
 
   // Smart Home & Bundle organic growth (DECLARED EARLY to avoid TDZ)
   const [smhBaseStart, setSmhBaseStart] = useState(2000);
@@ -642,7 +651,8 @@ export default function App() {
       const storageGBacc = billPerCamGB * camsPerAcc;
       const cdnGBacc = storageGBacc * cdnRatioEff;
 
-      const yandexCostAcc = storageGBacc * storagePrice + cdnGBacc * cdnPrice + backendOpsPerAcc;
+      const backendAlloc = (t.family === 'camera' && (t.price || 0) > 0) ? backendOpsPerAcc : 0;
+      const yandexCostAcc = storageGBacc * storagePrice + cdnGBacc * cdnPrice + backendAlloc;
 
       const overGBacc = Math.max(0, factPerCamGB - (capPerCam || 0)) * camsPerAcc;
       const overageAcc = overGBacc * overagePrice;
@@ -691,42 +701,43 @@ export default function App() {
     cloudAccounts,
   ]);
 
-  // Portfolio now (by families pools)
+  // Portfolio now: split base into paid vs free, then across families and tariffs
   const tariffPortfolio = useMemo(() => {
-    const familyPools: Record<Tariff["family"], number> = {
-      camera: Math.round(cloudAccounts),
-      smarthome: Math.round(smhBaseStart),
-      bundle: Math.round(bundleBaseStart),
+    const totalPaid = Math.round(accounts * cloudShare);
+    const totalFree = Math.max(0, Math.round(accounts - totalPaid));
+
+    const paidPools: Record<Tariff["family"], number> = {
+      camera: Math.round(totalPaid * (paidSplit.camera || 0)),
+      smarthome: Math.round(totalPaid * (paidSplit.smarthome || 0)),
+      bundle: Math.round(totalPaid * (paidSplit.bundle || 0)),
+    };
+    const freePools: Partial<Record<Tariff["family"], number>> = {
+      camera: Math.round(totalFree * (freeSplit.camera || 0)),
+      smarthome: Math.round(totalFree * (freeSplit.smarthome || 0)),
     };
 
-    // Precompute allocation per family. For 'camera' распределяем только по платным тарифам.
     const alloc: Record<string, number> = {};
-    (['camera','smarthome','bundle'] as Array<Tariff['family']>).forEach((fam) => {
-      const pool = familyPools[fam] || 0;
-      const ts = tariffs.filter(t => t.family === fam);
-      const paid = ts.filter(t => (t.price || 0) > 0);
-      const free = ts.filter(t => (t.price || 0) === 0);
 
-      if (fam === 'camera') {
-        // Распределяем только по платным, FREE не участвует в cloudShare (платящих)
-        const sumPaid = paid.reduce((s, t) => s + (t.forecast?.baseShare0 || 0), 0);
-        if (sumPaid > 0) {
-          for (const t of paid) alloc[t.id] = Math.round(pool * ((t.forecast?.baseShare0 || 0) / sumPaid));
-        } else if (paid.length) {
-          const w = 1 / paid.length;
-          for (const t of paid) alloc[t.id] = Math.round(pool * w);
-        }
-        for (const t of free) alloc[t.id] = 0;
+    function allocByShare(list: Tariff[], pool: number) {
+      if (!list.length || !pool) return;
+      const sum = list.reduce((s, t) => s + (t.forecast?.baseShare0 || 0), 0);
+      if (sum > 0) {
+        for (const t of list) alloc[t.id] = (alloc[t.id] || 0) + Math.round(pool * ((t.forecast?.baseShare0 || 0) / sum));
       } else {
-        // Для SMH/Bundle – распределяем по всем (можно позже ограничить до платных, если понадобится)
-        const sumAll = ts.reduce((s, t) => s + (t.forecast?.baseShare0 || 0), 0);
-        if (sumAll > 0) {
-          for (const t of ts) alloc[t.id] = Math.round(pool * ((t.forecast?.baseShare0 || 0) / sumAll));
-        } else if (ts.length) {
-          const w = 1 / ts.length;
-          for (const t of ts) alloc[t.id] = Math.round(pool * w);
-        }
+        const w = 1 / list.length;
+        for (const t of list) alloc[t.id] = (alloc[t.id] || 0) + Math.round(pool * w);
       }
+    }
+
+    (['camera','smarthome','bundle'] as Array<Tariff['family']>).forEach((fam) => {
+      const ts = tariffs.filter(t => t.family === fam);
+      const paidTs = ts.filter(t => (t.price || 0) > 0);
+      const freeTs = ts.filter(t => (t.price || 0) === 0);
+
+      // Paid pools always distributed across paid tariffs
+      allocByShare(paidTs, paidPools[fam] || 0);
+      // Free pools (only for camera/smarthome) across free tariffs
+      if (fam !== 'bundle') allocByShare(freeTs, (freePools as any)[fam] || 0);
     });
 
     const rows = tariffs.map(t => {
@@ -748,7 +759,7 @@ export default function App() {
       profit: s.profit + r.profit,
     }), { accs: 0, revenue: 0, yCost: 0, tCost: 0, cost: 0, profit: 0 });
     return { rows, totals };
-  }, [tariffs, unitTariffRows, cloudAccounts, smhBaseStart, bundleBaseStart]);
+  }, [tariffs, unitTariffRows, accounts, cloudShare, paidSplit, freeSplit]);
 
   // ---------------- PROGNOZ (months/years) ----------------
   const [months, setMonths] = useState(24);
@@ -1106,7 +1117,7 @@ export default function App() {
                   <label>Камер на аккаунт (ср.) <Help text="Сколько камер в среднем привязано к одному аккаунту." /></label>
                   <input className={inputCls} type="number" step={0.1} value={avgCams} onChange={e => setAvgCams(Number(e.target.value))} />
 
-                  <label>Доля облака (0..1) <Help text="Доля существующих аккаунтов, которые купили облачное хранение." /></label>
+                  <label>Доля платящих (0..1) <Help text="Доля существующих аккаунтов, которые платят (в т.ч. камеры/SMH/Bundle)." /></label>
                   <input className={inputCls} type="number" step={0.01} value={cloudShare} onChange={e => setCloudShare(Number(e.target.value))} />
 
                   <label>Дней в месяце</label>
@@ -1173,6 +1184,82 @@ export default function App() {
               </Section>
             </div>
 
+            {/* Scenario: split base into paid/free and across families */}
+            <Section title="Сценарий распределения базы (платящие/бесплатные)">
+              <div className="text-sm text-gray-700 mb-3">
+                Доля облака = доля платящих аккаунтов. Ниже задайте, как платящие и бесплатные
+                распределяются по семействам. Можно быстро применить пресеты.
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                  <div className="font-semibold mb-2">Платящие аккаунты — сплит по семействам (сумма = 1)</div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                    <label>Камеры</label>
+                    <input className={inputCls} type="number" step={0.01} value={paidSplit.camera}
+                      onChange={e=>setPaidSplit(ps=>({ ...ps, camera: Number(e.target.value) }))} />
+                    <label>Умный дом</label>
+                    <input className={inputCls} type="number" step={0.01} value={paidSplit.smarthome}
+                      onChange={e=>setPaidSplit(ps=>({ ...ps, smarthome: Number(e.target.value) }))} />
+                    <label>Комбо</label>
+                    <input className={inputCls} type="number" step={0.01} value={paidSplit.bundle}
+                      onChange={e=>setPaidSplit(ps=>({ ...ps, bundle: Number(e.target.value) }))} />
+                  </div>
+                  {(() => {
+                    const s = (paidSplit.camera||0)+(paidSplit.smarthome||0)+(paidSplit.bundle||0);
+                    return (
+                      <div className="mt-2 flex items-center gap-3">
+                        <div className={`text-xs ${Math.abs(s-1)<1e-6?"text-green-600":"text-amber-600"}`}>Сумма: {new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2}).format(s)}</div>
+                        <button className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs" onClick={()=>{
+                          const s0 = (paidSplit.camera||0)+(paidSplit.smarthome||0)+(paidSplit.bundle||0);
+                          if (s0>0) setPaidSplit({ camera: paidSplit.camera/s0, smarthome: paidSplit.smarthome/s0, bundle: paidSplit.bundle/s0 });
+                        }}>Нормализовать</button>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                  <div className="font-semibold mb-2">Бесплатные аккаунты — сплит (сумма = 1)</div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                    <label>Камеры (free)</label>
+                    <input className={inputCls} type="number" step={0.01} value={freeSplit.camera}
+                      onChange={e=>setFreeSplit(fs=>({ ...fs, camera: Number(e.target.value) }))} />
+                    <label>Умный дом (free)</label>
+                    <input className={inputCls} type="number" step={0.01} value={freeSplit.smarthome}
+                      onChange={e=>setFreeSplit(fs=>({ ...fs, smarthome: Number(e.target.value) }))} />
+                  </div>
+                  {(() => {
+                    const s = (freeSplit.camera||0)+(freeSplit.smarthome||0);
+                    return (
+                      <div className="mt-2 flex items-center gap-3">
+                        <div className={`text-xs ${Math.abs(s-1)<1e-6?"text-green-600":"text-amber-600"}`}>Сумма: {new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2}).format(s)}</div>
+                        <button className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs" onClick={()=>{
+                          const s0 = (freeSplit.camera||0)+(freeSplit.smarthome||0);
+                          if (s0>0) setFreeSplit({ camera: freeSplit.camera/s0, smarthome: freeSplit.smarthome/s0 });
+                        }}>Нормализовать</button>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                <span className="text-gray-500 mr-1">Пресеты:</span>
+                <button className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200" onClick={()=>{
+                  setPaidSplit({ camera: 0.7, smarthome: 0.1, bundle: 0.2 });
+                  setFreeSplit({ camera: 0.8, smarthome: 0.2 });
+                }}>Камеры-центричный</button>
+                <button className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200" onClick={()=>{
+                  setPaidSplit({ camera: 0.4, smarthome: 0.2, bundle: 0.4 });
+                  setFreeSplit({ camera: 0.6, smarthome: 0.4 });
+                }}>Bundle-центричный</button>
+                <button className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200" onClick={()=>{
+                  setPaidSplit({ camera: 0.3, smarthome: 0.5, bundle: 0.2 });
+                  setFreeSplit({ camera: 0.4, smarthome: 0.6 });
+                }}>SMH-центричный</button>
+              </div>
+            </Section>
+
             {/* Tariffs editor in Calc */}
             <Section title="Тарифы (редактируемые)">
               <TariffsEditor tariffs={tariffs} setTariffs={setTariffs} defaults={DEFAULT_TARIFFS} />
@@ -1226,9 +1313,9 @@ export default function App() {
             <Section title="Срез сейчас по портфелю (по семействам)">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div className="bg-gray-50 rounded-xl p-3"><div className="text-gray-500">Аккаунтов всего</div><div className="text-xl font-semibold"><Num value={accounts} /></div></div>
-                <div className="bg-gray-50 rounded-xl p-3"><div className="text-gray-500">Облачных аккаунтов</div><div className="text-xl font-semibold"><Num value={cloudAccounts} /></div></div>
+                <div className="bg-gray-50 rounded-xl p-3"><div className="text-gray-500">Платящих аккаунтов</div><div className="text-xl font-semibold"><Num value={cloudAccounts} /></div></div>
                 <div className="bg-gray-50 rounded-xl p-3"><div className="text-gray-500">Камер всего</div><div className="text-xl font-semibold"><Num value={camsTotal} /></div></div>
-                <div className="bg-gray-50 rounded-xl p-3"><div className="text-gray-500">Камер в облаке</div><div className="text-xl font-semibold"><Num value={camsCloud} /></div></div>
+                <div className="bg-gray-50 rounded-xl p-3"><div className="text-gray-500">Камер у платящих (оценка)</div><div className="text-xl font-semibold"><Num value={camsCloud} /></div></div>
               </div>
               <div className="overflow-x-auto mt-4">
                 <table className="min-w-[1100px] table-auto text-sm">
