@@ -52,6 +52,145 @@ function Help({ text }: { text: string }) {
   );
 }
 
+function TariffsEditor({ tariffs, setTariffs, defaults }: { tariffs: any[]; setTariffs: (t: any[]) => void; defaults: any[] }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [showExport, setShowExport] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState("");
+
+  const families: Array<{ key: "camera" | "smarthome" | "bundle"; title: string }> = [
+    { key: "camera", title: "Камеры" },
+    { key: "smarthome", title: "Умный дом" },
+    { key: "bundle", title: "Комбо" },
+  ];
+
+  const updateTariff = (id: string, patch: any) => {
+    setTariffs(
+      tariffs.map((t) => (t.id === id ? { ...t, ...patch } : t))
+    );
+  };
+  const updateTariffNested = (id: string, path: "varCost" | "forecast", key: string, value: any) => {
+    setTariffs(
+      tariffs.map((t) => (t.id === id ? { ...t, [path]: { ...(t[path] || {}), [key]: value } } : t))
+    );
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2 mb-3 text-sm">
+        <button className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200" onClick={() => setTariffs(defaults)}>
+          Сбросить на дефолт
+        </button>
+        <button className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200" onClick={() => { setShowExport(!showExport); setShowImport(false); }}>
+          {showExport ? "Скрыть экспорт" : "Экспорт тарифов (JSON)"}
+        </button>
+        <button className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200" onClick={() => { setShowImport(!showImport); setShowExport(false); }}>
+          {showImport ? "Скрыть импорт" : "Импорт тарифов (JSON)"}
+        </button>
+      </div>
+
+      {showExport && (
+        <div className="mb-4">
+          <textarea className={`${inputCls} w-full h-40 font-mono`} readOnly value={JSON.stringify(tariffs, null, 2)} />
+        </div>
+      )}
+      {showImport && (
+        <div className="mb-4">
+          <textarea className={`${inputCls} w-full h-40 font-mono`} placeholder="Вставьте JSON тарифов" value={importText} onChange={(e)=>setImportText(e.target.value)} />
+          <div className="mt-2">
+            <button className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white" onClick={() => {
+              try {
+                const parsed = JSON.parse(importText);
+                if (Array.isArray(parsed)) setTariffs(parsed);
+              } catch (e) { /* ignore */ }
+            }}>Импортировать</button>
+          </div>
+        </div>
+      )}
+
+      {families.map((fam) => (
+        <div key={fam.key} className="mb-4">
+          <div className="text-sm font-semibold mb-2">{fam.title}</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {tariffs.filter(t => t.family === fam.key).map(t => (
+              <div key={t.id} className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                <div className="flex items-start gap-2">
+                  <div className="font-semibold flex-1">{t.name}</div>
+                  <button className="text-indigo-600 text-sm" onClick={() => setOpen({ ...open, [t.id]: !open[t.id] })}>
+                    {open[t.id] ? "Свернуть" : "Изменить"}
+                  </button>
+                </div>
+                <div className="text-xs text-gray-600 mb-2">{t.description}</div>
+                <div className="text-sm font-medium mb-2">Цена: <Num value={t.price || 0} /> ₽/мес</div>
+                <ul className="list-disc pl-5 space-y-1 text-sm mb-3">
+                  {(t.features || []).map((f: string, i: number) => <li key={i}>{f}</li>)}
+                </ul>
+
+                {open[t.id] && (
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                    <label>Цена (₽/мес)</label>
+                    <input className={inputCls} type="number" value={t.price || 0} onChange={e=>updateTariff(t.id, { price: Number(e.target.value) })} />
+
+                    <label>Включено камер</label>
+                    <input className={inputCls} type="number" value={t.includedCams ?? 1} onChange={e=>updateTariff(t.id, { includedCams: Number(e.target.value) })} />
+
+                    <label>Архив (дней)</label>
+                    <input className={inputCls} type="number" value={t.archiveDays ?? 0} onChange={e=>updateTariff(t.id, { archiveDays: Number(e.target.value) })} />
+
+                    <label>Лимит ГБ/кам</label>
+                    <input className={inputCls} type="number" value={t.gbCapPerCam ?? 0} onChange={e=>updateTariff(t.id, { gbCapPerCam: Number(e.target.value) })} />
+
+                    <label>Overage ₽/ГБ</label>
+                    <input className={inputCls} type="number" value={t.overageRUBperGB ?? 0} onChange={e=>updateTariff(t.id, { overageRUBperGB: Number(e.target.value) })} />
+
+                    <div className="col-span-2 font-semibold mt-2">Переменная себестоимость (varCost)</div>
+                    <label>Yandex Storage ₽/ГБ·мес</label>
+                    <input className={inputCls} type="number" step={0.01} value={t.varCost?.yandexStorageRUBpGBm ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "yandexStorageRUBpGBm", Number(e.target.value))} />
+                    <label>Yandex CDN ₽/ГБ</label>
+                    <input className={inputCls} type="number" step={0.01} value={t.varCost?.yandexCDNRUBpGB ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "yandexCDNRUBpGB", Number(e.target.value))} />
+                    <label>avgGbPerDayMotion</label>
+                    <input className={inputCls} type="number" step={0.1} value={t.varCost?.avgGbPerDayMotion ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "avgGbPerDayMotion", Number(e.target.value))} />
+                    <label>cdnRatio</label>
+                    <input className={inputCls} type="number" step={0.01} value={t.varCost?.cdnRatio ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "cdnRatio", Number(e.target.value))} />
+                    <label>Tuya API $/1млн</label>
+                    <input className={inputCls} type="number" step={0.01} value={t.varCost?.tuyaAPIperMLNUSD ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "tuyaAPIperMLNUSD", Number(e.target.value))} />
+                    <label>Tuya Msgs $/1млн</label>
+                    <input className={inputCls} type="number" step={0.01} value={t.varCost?.tuyaMsgsperMLNUSD ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "tuyaMsgsperMLNUSD", Number(e.target.value))} />
+                    <label>Tuya Relay $/ГБ</label>
+                    <input className={inputCls} type="number" step={0.01} value={t.varCost?.tuyaRelayUSDpGB ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "tuyaRelayUSDpGB", Number(e.target.value))} />
+
+                    <div className="col-span-2 font-semibold mt-2">Прогноз/маркетинг</div>
+                    <label>baseShare0</label>
+                    <input className={inputCls} type="number" step={0.01} value={t.forecast?.baseShare0 ?? ""} onChange={e=>updateTariffNested(t.id, "forecast", "baseShare0", Number(e.target.value))} />
+                    <label>adoptionNew</label>
+                    <input className={inputCls} type="number" step={0.01} value={t.forecast?.adoptionNew ?? ""} onChange={e=>updateTariffNested(t.id, "forecast", "adoptionNew", Number(e.target.value))} />
+                    <label>churn</label>
+                    <input className={inputCls} type="number" step={0.001} value={t.forecast?.churn ?? ""} onChange={e=>updateTariffNested(t.id, "forecast", "churn", Number(e.target.value))} />
+                    <label>upgradeTo (id)</label>
+                    <select className={inputCls} value={t.forecast?.upgradeTo ?? ""} onChange={e=>updateTariffNested(t.id, "forecast", "upgradeTo", e.target.value || null)}>
+                      <option value="">—</option>
+                      {tariffs.map(x=> <option key={x.id} value={x.id}>{x.id}</option>)}
+                    </select>
+                    <label>upgradeRate</label>
+                    <input className={inputCls} type="number" step={0.001} value={t.forecast?.upgradeRate ?? ""} onChange={e=>updateTariffNested(t.id, "forecast", "upgradeRate", Number(e.target.value))} />
+                    <label>downgradeTo (id)</label>
+                    <select className={inputCls} value={t.forecast?.downgradeTo ?? ""} onChange={e=>updateTariffNested(t.id, "forecast", "downgradeTo", e.target.value || null)}>
+                      <option value="">—</option>
+                      {tariffs.map(x=> <option key={x.id} value={x.id}>{x.id}</option>)}
+                    </select>
+                    <label>downgradeRate</label>
+                    <input className={inputCls} type="number" step={0.001} value={t.forecast?.downgradeRate ?? ""} onChange={e=>updateTariffNested(t.id, "forecast", "downgradeRate", Number(e.target.value))} />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ---- Utils: clamp, safeDiv ----
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const safeDiv = (a, b) => (b ? a / b : 0);
@@ -116,6 +255,183 @@ export default function App() {
   const [tuyaRelayUSDpGB, setTuyaRelayUSDpGB] = useState(0.08);
   const [ycStorageRUBpGBm, setYcStorageRUBpGBm] = useState(1.2);
   const [ycCDNRUBpGB, setYcCDNRUBpGB] = useState(0.6);
+
+  // -------- Tariff v7 model --------
+  type Tariff = {
+    id: string;
+    family: "camera" | "smarthome" | "bundle";
+    name: string;
+    description: string;
+    features: string[];
+    price: number; // ₽/мес
+    includedCams?: number;
+    archiveDays?: number;
+    gbCapPerCam?: number;
+    overageRUBperGB?: number;
+    varCost?: {
+      yandexStorageRUBpGBm?: number;
+      yandexCDNRUBpGB?: number;
+      avgGbPerDayMotion?: number;
+      bitrateMbps?: number;
+      liveHoursPerDay?: number;
+      cdnRatio?: number;
+      tuyaAPIperMLNUSD?: number;
+      tuyaMsgsperMLNUSD?: number;
+      tuyaRelayUSDpGB?: number;
+    };
+    forecast?: {
+      baseShare0?: number;
+      adoptionNew?: number;
+      churn?: number;
+      upgradeTo?: string | null;
+      upgradeRate?: number;
+      downgradeTo?: string | null;
+      downgradeRate?: number;
+    };
+  };
+
+  const DEFAULT_TARIFFS: Tariff[] = [
+    // Cameras family
+    {
+      id: "cam_free",
+      family: "camera",
+      name: "Камеры — Free",
+      description: "Онлайн‑просмотр, базовые уведомления. Без архива.",
+      features: ["Онлайн‑просмотр", "Базовые уведомления", "1 зона детекции"],
+      price: 0,
+      includedCams: 1,
+      archiveDays: 0,
+      gbCapPerCam: 0,
+      overageRUBperGB: 0,
+      forecast: { baseShare0: 0.7, adoptionNew: 0, churn: 0.04 },
+    },
+    {
+      id: "cam_addon_49",
+      family: "camera",
+      name: "Камеры — уведомления/умный дом",
+      description: "Расширенные уведомления с превью + базовый умный дом.",
+      features: ["Превью в пушах", "Интеграция с Алисой", "2 пользователя"],
+      price: 49,
+      includedCams: 1,
+      archiveDays: 0,
+      gbCapPerCam: 0,
+      overageRUBperGB: 0,
+      forecast: { baseShare0: 0.15, adoptionNew: 0.25, churn: 0.03, upgradeTo: "cam_arch_7", upgradeRate: 0.02 },
+    },
+    {
+      id: "cam_arch_7",
+      family: "camera",
+      name: "Камеры — архив 7 дней",
+      description: "Архив 7 дней, лимит 5 ГБ/кам, 1 камера включена.",
+      features: ["Архив 7 дней", "Лимит 5 ГБ/кам", "1 включённая камера"],
+      price: 150,
+      includedCams: 1,
+      archiveDays: 7,
+      gbCapPerCam: 5,
+      overageRUBperGB: 7,
+      forecast: { baseShare0: 0.1, adoptionNew: 0.35, churn: 0.025, upgradeTo: "cam_arch_30", upgradeRate: 0.015, downgradeTo: "cam_addon_49", downgradeRate: 0.005 },
+    },
+    {
+      id: "cam_arch_30",
+      family: "camera",
+      name: "Камеры — архив 30 дней",
+      description: "Архив 30 дней, лимит 25 ГБ/кам, 1 камера.",
+      features: ["Архив 30 дней", "Лимит 25 ГБ/кам", "Приоритетный доступ"],
+      price: 299,
+      includedCams: 1,
+      archiveDays: 30,
+      gbCapPerCam: 25,
+      overageRUBperGB: 7,
+      forecast: { baseShare0: 0.04, adoptionNew: 0.25, churn: 0.02, upgradeTo: "cam_arch_90", upgradeRate: 0.01, downgradeTo: "cam_arch_7", downgradeRate: 0.01 },
+    },
+    {
+      id: "cam_arch_90",
+      family: "camera",
+      name: "Камеры — архив 90 дней",
+      description: "Архив 90 дней, лимит 75 ГБ/кам, 2 камеры.",
+      features: ["Архив 90 дней", "Лимит 75 ГБ/кам", "2 включённые камеры"],
+      price: 699,
+      includedCams: 2,
+      archiveDays: 90,
+      gbCapPerCam: 75,
+      overageRUBperGB: 7,
+      forecast: { baseShare0: 0.01, adoptionNew: 0.15, churn: 0.015, downgradeTo: "cam_arch_30", downgradeRate: 0.01 },
+    },
+
+    // Smart home family
+    {
+      id: "smh_free",
+      family: "smarthome",
+      name: "Умный дом — Free",
+      description: "Базовое подключение/Callback.",
+      features: ["Базовый Callback", "Подключение устройств"],
+      price: 0,
+      forecast: { baseShare0: 0.8, adoptionNew: 0, churn: 0.04 },
+    },
+    {
+      id: "smh_49",
+      family: "smarthome",
+      name: "Умный дом — Basic",
+      description: "Вкл/выкл, расписание, базовые сцены; до 3 пользователей.",
+      features: ["Сценарии если/и/или", "Расписания", "3 пользователя"],
+      price: 49,
+      forecast: { baseShare0: 0.2, adoptionNew: 0.25, churn: 0.03 },
+    },
+
+    // Bundle family
+    {
+      id: "bundle_89",
+      family: "bundle",
+      name: "Комбо — уведомления + умный дом",
+      description: "Уведомления по камерам + базовый умный дом.",
+      features: ["Общий аккаунт семьи", "Единые сценарии", "Приоритет соединения"],
+      price: 89,
+      includedCams: 1,
+      archiveDays: 0,
+      forecast: { baseShare0: 0.6, adoptionNew: 0.4, churn: 0.03, upgradeTo: "bundle_arch_7", upgradeRate: 0.02 },
+    },
+    {
+      id: "bundle_arch_7",
+      family: "bundle",
+      name: "Комбо + архив 7",
+      description: "Bundle + архив 7 дней, лимиты как у камер.",
+      features: ["Архив 7", "Лимит 5 ГБ/кам", "CDN/Relay приоритет"],
+      price: 199,
+      includedCams: 1,
+      archiveDays: 7,
+      gbCapPerCam: 5,
+      overageRUBperGB: 7,
+      forecast: { baseShare0: 0.25, adoptionNew: 0.35, churn: 0.025, upgradeTo: "bundle_arch_30", upgradeRate: 0.015, downgradeTo: "bundle_89", downgradeRate: 0.01 },
+    },
+    {
+      id: "bundle_arch_30",
+      family: "bundle",
+      name: "Комбо + архив 30",
+      description: "Bundle + архив 30 дней, 25 ГБ/кам.",
+      features: ["Архив 30", "Лимит 25 ГБ/кам"],
+      price: 349,
+      includedCams: 1,
+      archiveDays: 30,
+      gbCapPerCam: 25,
+      overageRUBperGB: 7,
+      forecast: { baseShare0: 0.1, adoptionNew: 0.2, churn: 0.02, upgradeTo: "bundle_arch_90", upgradeRate: 0.01, downgradeTo: "bundle_arch_7", downgradeRate: 0.01 },
+    },
+    {
+      id: "bundle_arch_90",
+      family: "bundle",
+      name: "Комбо + архив 90",
+      description: "Bundle + архив 90 дней, 75 ГБ/кам.",
+      features: ["Архив 90", "Лимит 75 ГБ/кам"],
+      price: 799,
+      includedCams: 2,
+      archiveDays: 90,
+      gbCapPerCam: 75,
+      overageRUBperGB: 7,
+      forecast: { baseShare0: 0.05, adoptionNew: 0.05, churn: 0.015, downgradeTo: "bundle_arch_30", downgradeRate: 0.01 },
+    },
+  ];
+
+  const [tariffs, setTariffs] = useState<Tariff[]>(DEFAULT_TARIFFS);
 
   type Pkg = {
     name: string;
@@ -244,6 +560,15 @@ export default function App() {
   const [competitorK, setCompetitorK] = useState(0.5);              // крутизна S-кривой (логистическая)
   const [competitorMid, setCompetitorMid] = useState(null);         // месяц середины S-кривой (null = центр)
 
+  // Smart Home & Bundle organic growth
+  const [smhBaseStart, setSmhBaseStart] = useState(2000);
+  const [smhGrowth, setSmhGrowth] = useState(0.02);
+  const [bundleBaseStart, setBundleBaseStart] = useState(1000);
+  const [bundleGrowth, setBundleGrowth] = useState(0.03);
+
+  // Competitor split across families
+  const [competitorSplit, setCompetitorSplit] = useState({ camera: 0.7, smarthome: 0.1, bundle: 0.2 });
+
   type ForecastRow = {
     month: number;
     sales: number;
@@ -335,6 +660,256 @@ export default function App() {
   }, [months, churn, salesStart, salesGrowthPct, cloudNewShare, unitRows, pkgs, cloudAccounts, camsTotal, avgCams, competitorBase, competitorConversionPct, competitorHorizon, competitorMode, competitorK, competitorMid]);
 
   const breakevenMonth = useMemo(() => forecast.rows.find(r => r.cumProfit > 0)?.month ?? null, [forecast]);
+
+  // ---------- Helper: distribute by adoption within family ----------
+  function distributeByAdoption(totalNew: number, family: Tariff["family"], all: Tariff[]) {
+    const familyTariffs = all.filter(t => t.family === family);
+    const paid = familyTariffs.filter(t => (t.price || 0) > 0);
+    const free = familyTariffs.find(t => (t.price || 0) === 0) || null;
+    const sumAdoption = paid.reduce((s, t) => s + (t.forecast?.adoptionNew || 0), 0);
+    const scale = sumAdoption > 1 ? 1 / sumAdoption : 1;
+    const alloc: Record<string, number> = {};
+    let used = 0;
+    for (const t of paid) {
+      const a = (t.forecast?.adoptionNew || 0) * scale;
+      const v = Math.round(totalNew * a);
+      alloc[t.id] = v;
+      used += v;
+    }
+    if (free) alloc[free.id] = Math.max(0, Math.round(totalNew - used));
+    return alloc; // {tariffId: newCount}
+  }
+
+  // ---------- Forecast v7 by tariffs (separate from legacy) ----------
+  type TFRow = {
+    month: number;
+    activeByFamily: { camera: number; smarthome: number; bundle: number };
+    revenue: number;
+    cost: number;
+    profit: number;
+    cumProfit: number;
+    breakdown: {
+      activeByTariff: Record<string, number>;
+      revByTariff: Record<string, number>;
+      costByTariff: Record<string, number>;
+      profitByTariff: Record<string, number>;
+    };
+  };
+
+  const tariffForecast = useMemo(() => {
+    // competitor schedule
+    const competitorTarget = competitorBase * competitorConversionPct;
+    const competitorPlan = makeCompetitorSchedule({
+      mode: competitorMode,
+      total: competitorTarget,
+      months: competitorHorizon,
+      params: { k: competitorK, x0: competitorMid },
+    });
+
+    // initial pools
+    let cameraPool = Math.round(cloudAccounts); // из текущей базы облака
+    let smhPool = Math.round(smhBaseStart);
+    let bundlePool = Math.round(bundleBaseStart);
+
+    // initial active by tariff via baseShare0
+    const activeByTariff: Record<string, number> = {};
+    const families: Tariff["family"][] = ["camera", "smarthome", "bundle"];
+    for (const fam of families) {
+      const pool = fam === "camera" ? cameraPool : fam === "smarthome" ? smhPool : bundlePool;
+      const ts = tariffs.filter(t => t.family === fam);
+      let used = 0;
+      for (const t of ts) {
+        const share = t.forecast?.baseShare0 || 0;
+        const v = Math.round(pool * share);
+        if (v > 0) {
+          activeByTariff[t.id] = v;
+          used += v;
+        } else {
+          activeByTariff[t.id] = 0;
+        }
+      }
+      // remainder to free
+      const free = ts.find(t => (t.price || 0) === 0);
+      if (free) activeByTariff[free.id] = (activeByTariff[free.id] || 0) + Math.max(0, pool - used);
+    }
+
+    const rows: TFRow[] = [];
+    let cumProfit = 0;
+
+    for (let m = 1; m <= months; m++) {
+      // new camera from sales
+      const sales = Math.round(salesStart * Math.pow(1 + salesGrowthPct, m - 1));
+      const newAccFromSales = sales / Math.max(avgCams, 1e-9);
+      const newCloud = newAccFromSales * cloudNewShare;
+      const compGainTotal = m <= competitorHorizon ? competitorPlan[m - 1] : 0;
+      const compGainCamera = compGainTotal * (competitorSplit.camera || 0);
+      const compGainBundle = compGainTotal * (competitorSplit.bundle || 0);
+      const compGainSmh = compGainTotal * (competitorSplit.smarthome || 0);
+
+      // pools evolution (for info)
+      cameraPool = Math.round(cameraPool * (1 - churn) + newAccFromSales + compGainCamera);
+      smhPool = Math.round(smhPool * (1 + smhGrowth) + compGainSmh);
+      const prevBundlePool = bundlePool;
+      bundlePool = Math.round(bundlePool * (1 + bundleGrowth) + compGainBundle);
+
+      // allocations for new in month
+      const newByTariff: Record<string, number> = {};
+      const allocCam = distributeByAdoption(newCloud + compGainCamera, "camera", tariffs);
+      for (const k in allocCam) newByTariff[k] = (newByTariff[k] || 0) + allocCam[k];
+
+      const prevSmhPool = Math.round(smhPool / (1 + smhGrowth) - compGainSmh / (1 + smhGrowth)); // approx previous before growth
+      const smhDelta = Math.max(0, smhPool - prevSmhPool);
+      const allocSmh = distributeByAdoption(smhDelta, "smarthome", tariffs);
+      for (const k in allocSmh) newByTariff[k] = (newByTariff[k] || 0) + allocSmh[k];
+
+      const bundleDelta = Math.max(0, bundlePool - prevBundlePool);
+      const allocBundle = distributeByAdoption(bundleDelta, "bundle", tariffs);
+      for (const k in allocBundle) newByTariff[k] = (newByTariff[k] || 0) + allocBundle[k];
+
+      // upgrades/downgrades and churn
+      const nextActiveByTariff: Record<string, number> = { ...activeByTariff };
+      const upIn: Record<string, number> = {};
+      const downIn: Record<string, number> = {};
+
+      for (const t of tariffs) {
+        const id = t.id;
+        const base = activeByTariff[id] || 0;
+        const upOut = t.forecast?.upgradeTo ? base * (t.forecast?.upgradeRate || 0) : 0;
+        const downOut = t.forecast?.downgradeTo ? base * (t.forecast?.downgradeRate || 0) : 0;
+        if (t.forecast?.upgradeTo) upIn[t.forecast.upgradeTo] = (upIn[t.forecast.upgradeTo] || 0) + upOut;
+        if (t.forecast?.downgradeTo) downIn[t.forecast.downgradeTo] = (downIn[t.forecast.downgradeTo] || 0) + downOut;
+        const churnRate = t.forecast?.churn || 0;
+        const churnOut = base * churnRate;
+        nextActiveByTariff[id] = Math.max(0, Math.round(base - upOut - downOut - churnOut + (newByTariff[id] || 0)));
+      }
+      for (const id in upIn) nextActiveByTariff[id] = Math.round((nextActiveByTariff[id] || 0) + upIn[id]);
+      for (const id in downIn) nextActiveByTariff[id] = Math.round((nextActiveByTariff[id] || 0) + downIn[id]);
+
+      // economics per tariff
+      const revByTariff: Record<string, number> = {};
+      const costByTariff: Record<string, number> = {};
+      const profitByTariff: Record<string, number> = {};
+
+      const tuyaApiUSD = tuyaApiUSDpm;
+      const tuyaMsgUSD = tuyaMsgUSDpm;
+      const tuyaRelayUSD = tuyaRelayUSDpGB;
+
+      for (const t of tariffs) {
+        const id = t.id;
+        const act = nextActiveByTariff[id] || 0;
+        const price = t.price || 0;
+        let revenue = act * price;
+
+        // storage/cdn if archive
+        const archiveDays = t.archiveDays || 0;
+        const includedCams = t.includedCams || 1;
+        const gbCapPerCam = t.gbCapPerCam || 0;
+        const overageRUBperGB = t.overageRUBperGB || 0;
+
+        const vc = t.varCost || {};
+        const vcStorage = vc.yandexStorageRUBpGBm ?? ycStorageRUBpGBm;
+        const vcCDN = vc.yandexCDNRUBpGB ?? ycCDNRUBpGB;
+        const vcCdnRatio = vc.cdnRatio ?? cdnRatio;
+        const vcGbDay = vc.avgGbPerDayMotion ?? gbPerDay; // используем текущий gbPerDay
+        const vcRelayUSD = vc.tuyaRelayUSDpGB ?? tuyaRelayUSD;
+        const vcApiUSD = vc.tuyaAPIperMLNUSD ?? tuyaApiUSD;
+        const vcMsgUSD = vc.tuyaMsgsperMLNUSD ?? tuyaMsgUSD;
+
+        let yandexCost = 0;
+        let overageRev = 0;
+        if (archiveDays > 0) {
+          const factPerCamGB = vcGbDay * archiveDays;
+          const billPerCamGB = Math.min(factPerCamGB, gbCapPerCam || factPerCamGB);
+          const storageGB = billPerCamGB * includedCams;
+          const cdnGB = storageGB * vcCdnRatio;
+          yandexCost = act * (storageGB * vcStorage + cdnGB * vcCDN);
+          if (overageRUBperGB > 0 && gbCapPerCam && factPerCamGB > gbCapPerCam) {
+            const overGB = (factPerCamGB - gbCapPerCam) * includedCams;
+            overageRev = act * overGB * overageRUBperGB;
+          }
+        }
+
+        // Tuya approximate variable cost per account
+        const apiCallsPerAcc = apiPerDay * monthDays; // от глобалей (приближение)
+        const msgsPerAcc = 10 * monthDays;
+        const relayGBPerAcc = camHoursPerDayForRelay * 0.72 * monthDays; // 0.72 GB/h
+        const tuyaCostPerAcc = (Math.max(0, (apiCallsPerAcc - 1_000_000) / 1_000_000) * vcApiUSD * fx) + ((msgsPerAcc / 1_000_000) * vcMsgUSD * fx) + (relayGBPerAcc * vcRelayUSD * fx);
+        const tuyaCost = act * tuyaCostPerAcc;
+
+        const cost = yandexCost + tuyaCost;
+        revenue += overageRev;
+        const profit = revenue - cost;
+        revByTariff[id] = revenue;
+        costByTariff[id] = cost;
+        profitByTariff[id] = profit;
+      }
+
+      // summary
+      const activeByFamily = { camera: 0, smarthome: 0, bundle: 0 } as { camera: number; smarthome: number; bundle: number };
+      for (const t of tariffs) {
+        const fam = t.family;
+        activeByFamily[fam] += nextActiveByTariff[t.id] || 0;
+      }
+      const revenue = Object.values(revByTariff).reduce((s, v) => s + v, 0);
+      const cost = Object.values(costByTariff).reduce((s, v) => s + v, 0);
+      const profit = revenue - cost;
+      cumProfit += profit;
+
+      rows.push({
+        month: m,
+        activeByFamily,
+        revenue,
+        cost,
+        profit,
+        cumProfit,
+        breakdown: {
+          activeByTariff: { ...nextActiveByTariff },
+          revByTariff,
+          costByTariff,
+          profitByTariff,
+        },
+      });
+
+      // move to next state
+      for (const k in nextActiveByTariff) activeByTariff[k] = nextActiveByTariff[k];
+    }
+
+    return { rows };
+  }, [
+    months,
+    salesStart,
+    salesGrowthPct,
+    avgCams,
+    cloudNewShare,
+    competitorBase,
+    competitorConversionPct,
+    competitorHorizon,
+    competitorMode,
+    competitorK,
+    competitorMid,
+    competitorSplit,
+    smhBaseStart,
+    smhGrowth,
+    bundleBaseStart,
+    bundleGrowth,
+    tariffs,
+    // cost params
+    ycStorageRUBpGBm,
+    ycCDNRUBpGB,
+    cdnRatio,
+    gbPerDay,
+    tuyaApiUSDpm,
+    tuyaMsgUSDpm,
+    tuyaRelayUSDpGB,
+    fx,
+    apiPerDay,
+    monthDays,
+    camHoursPerDayForRelay,
+    churn,
+    cloudAccounts,
+  ]);
+
+  const [detailMonth, setDetailMonth] = useState<number | null>(null);
 
   // ---------------- UI ----------------
   const [tab, setTab] = useState("calc");
@@ -613,6 +1188,18 @@ export default function App() {
                   <label>Доля облака новых</label>
                   <input className={inputCls} type="number" step={0.01} value={cloudNewShare} onChange={e => setCloudNewShare(Number(e.target.value))} />
 
+                  <label>SMH база (старт)</label>
+                  <input className={inputCls} type="number" value={smhBaseStart} onChange={e => setSmhBaseStart(Number(e.target.value))} />
+
+                  <label>SMH рост/мес</label>
+                  <input className={inputCls} type="number" step={0.001} value={smhGrowth} onChange={e => setSmhGrowth(Number(e.target.value))} />
+
+                  <label>Bundle база (старт)</label>
+                  <input className={inputCls} type="number" value={bundleBaseStart} onChange={e => setBundleBaseStart(Number(e.target.value))} />
+
+                  <label>Bundle рост/мес</label>
+                  <input className={inputCls} type="number" step={0.001} value={bundleGrowth} onChange={e => setBundleGrowth(Number(e.target.value))} />
+
                   <div className="col-span-2 h-2"></div>
                   <div className="col-span-2 font-semibold">Приток от конкурентов</div>
 
@@ -643,6 +1230,13 @@ export default function App() {
                       }} />
                     </>
                   )}
+
+                  <label>Сплит конкурентов: Camera</label>
+                  <input className={inputCls} type="number" step={0.01} value={competitorSplit.camera} onChange={e=>setCompetitorSplit({ ...competitorSplit, camera: Number(e.target.value) })} />
+                  <label>Сплит конкурентов: SmartHome</label>
+                  <input className={inputCls} type="number" step={0.01} value={competitorSplit.smarthome} onChange={e=>setCompetitorSplit({ ...competitorSplit, smarthome: Number(e.target.value) })} />
+                  <label>Сплит конкурентов: Bundle</label>
+                  <input className={inputCls} type="number" step={0.01} value={competitorSplit.bundle} onChange={e=>setCompetitorSplit({ ...competitorSplit, bundle: Number(e.target.value) })} />
                 </div>
               </Section>
 
@@ -779,72 +1373,156 @@ export default function App() {
                 </div>
               </div>
             </Section>
+
+            {/* Tariff forecast summary */}
+            <Section title="Прогноз по тарифам — сводка по месяцам">
+              <div className="flex items-center gap-3 mb-3 text-sm">
+                <div className="text-gray-600">Детализация по месяцу:</div>
+                <input className={`${inputCls} w-28`} type="number" min={1} max={months} placeholder="№ мес" value={detailMonth ?? ""} onChange={e=>{
+                  const v = e.target.value.trim();
+                  setDetailMonth(v === "" ? null : Math.min(months, Math.max(1, Number(v))));
+                }} />
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-[900px] table-auto text-sm">
+                  <thead>
+                    <tr className="text-left">
+                      <th className={thCls}>Мес</th>
+                      <th className={thCls}>Активные Camera</th>
+                      <th className={thCls}>Активные SMH</th>
+                      <th className={thCls}>Активные Bundle</th>
+                      <th className={thCls}>Выручка</th>
+                      <th className={thCls}>Себестоимость</th>
+                      <th className={thCls}>Прибыль</th>
+                      <th className={thCls}>Накопит.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tariffForecast.rows.map(r => (
+                      <tr key={r.month} className="border-t">
+                        <td className={`${tdTextCls} py-1`}>{r.month}</td>
+                        <td className={tdNumCls}><Num value={r.activeByFamily.camera} /></td>
+                        <td className={tdNumCls}><Num value={r.activeByFamily.smarthome} /></td>
+                        <td className={tdNumCls}><Num value={r.activeByFamily.bundle} /></td>
+                        <td className={tdNumCls}><Num value={r.revenue} /></td>
+                        <td className={tdNumCls}><Num value={r.cost} /></td>
+                        <td className={`${tdNumCls} ${r.profit >= 0 ? "text-green-600" : "text-red-600"}`}><Num value={r.profit} /></td>
+                        <td className={`${tdNumCls} ${r.cumProfit >= 0 ? "text-green-600" : "text-red-600"}`}><Num value={r.cumProfit} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {detailMonth && (
+                <div className="mt-4 overflow-x-auto">
+                  <div className="text-sm font-medium mb-2">Детализация по тарифам (месяц {detailMonth})</div>
+                  {(() => {
+                    const r = tariffForecast.rows[(detailMonth - 1)];
+                    if (!r) return <div className="text-sm text-gray-500">Нет данных</div>;
+                    return (
+                      <table className="min-w-[1100px] table-auto text-sm">
+                        <thead>
+                          <tr className="text-left">
+                            <th className={thCls}>Тариф</th>
+                            <th className={thCls}>Семейство</th>
+                            <th className={thCls}>Активные</th>
+                            <th className={thCls}>Выручка</th>
+                            <th className={thCls}>Себестоимость</th>
+                            <th className={thCls}>Прибыль</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tariffs.map(t => (
+                            <tr key={t.id} className="border-t">
+                              <td className={`${tdTextCls} py-1`}>{t.name}</td>
+                              <td className={tdTextCls}>{t.family}</td>
+                              <td className={tdNumCls}><Num value={r.breakdown.activeByTariff[t.id] || 0} /></td>
+                              <td className={tdNumCls}><Num value={r.breakdown.revByTariff[t.id] || 0} /></td>
+                              <td className={tdNumCls}><Num value={r.breakdown.costByTariff[t.id] || 0} /></td>
+                              <td className={`${tdNumCls} ${(r.breakdown.profitByTariff[t.id] || 0) >= 0 ? "text-green-600" : "text-red-600"}`}><Num value={r.breakdown.profitByTariff[t.id] || 0} /></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    );
+                  })()}
+                </div>
+              )}
+            </Section>
           </>
         )}
 
         {tab === "tariffs" && (
-          <Section title="Тарифные линии — обзор по сегментам (без цен)">
-            <div className="text-sm text-gray-700 mb-3">
-              Ниже — функциональные наборы для разных потребительских сегментов. Используйте это описание для сайта/презентаций.
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* Камеры — базовый */}
-              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                <div className="font-semibold mb-2">Камеры — базовый</div>
-                <ul className="list-disc pl-5 space-y-1">
-                  <li>Онлайн-просмотр, базовые уведомления</li>
-                  <li>Мини-архив событий (24 часа)</li>
-                  <li>1 виртуальная зона детекции</li>
-                  <li>Доступ для семьи: до 2 пользователей</li>
-                </ul>
+          <>
+            <Section title="Тарифные линии — обзор по сегментам (без цен)">
+              <div className="text-sm text-gray-700 mb-3">
+                Ниже — функциональные наборы для разных потребительских сегментов. Используйте это описание для сайта/презентаций.
               </div>
 
-              {/* Камеры — расширенный */}
-              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                <div className="font-semibold mb-2">Камеры — расширенный</div>
-                <ul className="list-disc pl-5 space-y-1">
-                  <li>Архив 7/30/90 дней, лимиты ГБ/камера</li>
-                  <li>3–5 зон детекции, превью в уведомлениях</li>
-                  <li>Приоритетный доступ (CDN/relay)</li>
-                  <li>Расширенные уведомления и аналитика</li>
-                </ul>
-              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Камеры — базовый */}
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                  <div className="font-semibold mb-2">Камеры — базовый</div>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Онлайн-просмотр, базовые уведомления</li>
+                    <li>Мини-архив событий (24 часа)</li>
+                    <li>1 виртуальная зона детекции</li>
+                    <li>Доступ для семьи: до 2 пользователей</li>
+                  </ul>
+                </div>
 
-              {/* Умный дом — базовый */}
-              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                <div className="font-semibold mb-2">Умный дом — базовый</div>
-                <ul className="list-disc pl-5 space-y-1">
-                  <li>Расширенные сценарии (условия «если/и/или»)</li>
-                  <li>Журнал событий 7 дней</li>
-                  <li>Общий доступ: до 3 пользователей</li>
-                  <li>Интеграция с Алисой</li>
-                </ul>
-              </div>
+                {/* Камеры — расширенный */}
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                  <div className="font-semibold mb-2">Камеры — расширенный</div>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Архив 7/30/90 дней, лимиты ГБ/камера</li>
+                    <li>3–5 зон детекции, превью в уведомлениях</li>
+                    <li>Приоритетный доступ (CDN/relay)</li>
+                    <li>Расширенные уведомления и аналитика</li>
+                  </ul>
+                </div>
 
-              {/* Умный дом — расширенный */}
-              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                <div className="font-semibold mb-2">Умный дом — расширенный</div>
-                <ul className="list-disc pl-5 space-y-1">
-                  <li>Полная логика сценариев, гости/домохозяйства</li>
-                  <li>Аналитика потребления (розетки и т.п.)</li>
-                  <li>Интеллектуальные уведомления</li>
-                  <li>Интеграции: Telegram/умные колонки</li>
-                </ul>
-              </div>
+                {/* Умный дом — базовый */}
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                  <div className="font-semibold mb-2">Умный дом — базовый</div>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Расширенные сценарии (условия «если/и/или»)</li>
+                    <li>Журнал событий 7 дней</li>
+                    <li>Общий доступ: до 3 пользователей</li>
+                    <li>Интеграция с Алисой</li>
+                  </ul>
+                </div>
 
-              {/* Bundle */}
-              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 lg:col-span-3">
-                <div className="font-semibold mb-2">Bundle (камеры + умный дом)</div>
-                <ul className="list-disc pl-5 space-y-1">
-                  <li>Объединённый доступ и общий аккаунт семьи</li>
-                  <li>Синхронизация настроек и резервные копии</li>
-                  <li>Единые сценарии: «камера → действие устройства»</li>
-                  <li>Приоритетное соединение и поддержка</li>
-                </ul>
+                {/* Умный дом — расширенный */}
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                  <div className="font-semibold mb-2">Умный дом — расширенный</div>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Полная логика сценариев, гости/домохозяйства</li>
+                    <li>Аналитика потребления (розетки и т.п.)</li>
+                    <li>Интеллектуальные уведомления</li>
+                    <li>Интеграции: Telegram/умные колонки</li>
+                  </ul>
+                </div>
+
+                {/* Bundle */}
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 lg:col-span-3">
+                  <div className="font-semibold mb-2">Bundle (камеры + умный дом)</div>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Объединённый доступ и общий аккаунт семьи</li>
+                    <li>Синхронизация настроек и резервные копии</li>
+                    <li>Единые сценарии: «камера → действие устройства»</li>
+                    <li>Приоритетное соединение и поддержка</li>
+                  </ul>
+                </div>
               </div>
-            </div>
-          </Section>
+            </Section>
+
+            {/* Editable tariffs grid */}
+            <Section title="Редактирование тарифов">
+              <TariffsEditor tariffs={tariffs} setTariffs={setTariffs} defaults={DEFAULT_TARIFFS} />
+            </Section>
+          </>
         )}
 
         <Section title="Примечания и допущения">
