@@ -4,6 +4,11 @@ import {
   Line,
   AreaChart,
   Area,
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
   CartesianGrid,
   XAxis,
   YAxis,
@@ -78,7 +83,7 @@ function TariffsEditor({ tariffs, setTariffs, defaults }: { tariffs: any[]; setT
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 mb-3 text-sm">
-        <button className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200" onClick={() => setTariffs(defaults)}>
+        <button className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200" onClick={() => setTariffs(JSON.parse(JSON.stringify(defaults)))}>
           Сбросить на дефолт
         </button>
         <button className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200" onClick={() => { setShowExport(!showExport); setShowImport(false); }}>
@@ -128,57 +133,57 @@ function TariffsEditor({ tariffs, setTariffs, defaults }: { tariffs: any[]; setT
 
                 {open[t.id] && (
                   <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-                    <label>Цена (₽/мес)</label>
+                    <label>Цена (₽/мес) <Help text="ARPU тарифа за месяц. 0 для Free" /></label>
                     <input className={inputCls} type="number" value={t.price || 0} onChange={e=>updateTariff(t.id, { price: Number(e.target.value) })} />
 
-                    <label>Включено камер</label>
+                    <label>Включено камер <Help text="Сколько камер входит в тариф без доплаты" /></label>
                     <input className={inputCls} type="number" value={t.includedCams ?? 1} onChange={e=>updateTariff(t.id, { includedCams: Number(e.target.value) })} />
 
-                    <label>Архив (дней)</label>
+                    <label>Архив (дней) <Help text="Глубина архива видеозаписей. 0 — без архива" /></label>
                     <input className={inputCls} type="number" value={t.archiveDays ?? 0} onChange={e=>updateTariff(t.id, { archiveDays: Number(e.target.value) })} />
 
-                    <label>Лимит ГБ/кам</label>
+                    <label>Лимит ГБ/кам <Help text="Жёсткий cap объёма хранения на камеру за период" /></label>
                     <input className={inputCls} type="number" value={t.gbCapPerCam ?? 0} onChange={e=>updateTariff(t.id, { gbCapPerCam: Number(e.target.value) })} />
 
-                    <label>Overage ₽/ГБ</label>
+                    <label>Overage ₽/ГБ <Help text="Стоимость перерасхода (факт − лимит), ₽/ГБ" /></label>
                     <input className={inputCls} type="number" value={t.overageRUBperGB ?? 0} onChange={e=>updateTariff(t.id, { overageRUBperGB: Number(e.target.value) })} />
 
                     <div className="col-span-2 font-semibold mt-2">Переменная себестоимость (varCost)</div>
-                    <label>Yandex Storage ₽/ГБ·мес</label>
+                    <label>Yandex Storage ₽/ГБ·мес <Help text="Стоимость хранения за ГБ в месяц" /></label>
                     <input className={inputCls} type="number" step={0.01} value={t.varCost?.yandexStorageRUBpGBm ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "yandexStorageRUBpGBm", Number(e.target.value))} />
-                    <label>Yandex CDN ₽/ГБ</label>
+                    <label>Yandex CDN ₽/ГБ <Help text="Стоимость CDN за ГБ скачиваний" /></label>
                     <input className={inputCls} type="number" step={0.01} value={t.varCost?.yandexCDNRUBpGB ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "yandexCDNRUBpGB", Number(e.target.value))} />
-                    <label>avgGbPerDayMotion</label>
+                    <label>avgGbPerDayMotion <Help text="Средний объём/день/камера в Motion‑режиме" /></label>
                     <input className={inputCls} type="number" step={0.1} value={t.varCost?.avgGbPerDayMotion ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "avgGbPerDayMotion", Number(e.target.value))} />
-                    <label>cdnRatio</label>
+                    <label>cdnRatio <Help text="Доля скачиваний из CDN (0..1)" /></label>
                     <input className={inputCls} type="number" step={0.01} value={t.varCost?.cdnRatio ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "cdnRatio", Number(e.target.value))} />
-                    <label>Tuya API $/1млн</label>
+                    <label>Tuya API $/1млн <Help text="Стоимость API на 1 млн вызовов (USD)" /></label>
                     <input className={inputCls} type="number" step={0.01} value={t.varCost?.tuyaAPIperMLNUSD ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "tuyaAPIperMLNUSD", Number(e.target.value))} />
-                    <label>Tuya Msgs $/1млн</label>
+                    <label>Tuya Msgs $/1млн <Help text="Стоимость сообщений/событий на 1 млн (USD)" /></label>
                     <input className={inputCls} type="number" step={0.01} value={t.varCost?.tuyaMsgsperMLNUSD ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "tuyaMsgsperMLNUSD", Number(e.target.value))} />
-                    <label>Tuya Relay $/ГБ</label>
+                    <label>Tuya Relay $/ГБ <Help text="Перенаправление потоков (relay), стоимость за ГБ (USD)" /></label>
                     <input className={inputCls} type="number" step={0.01} value={t.varCost?.tuyaRelayUSDpGB ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "tuyaRelayUSDpGB", Number(e.target.value))} />
 
                     <div className="col-span-2 font-semibold mt-2">Прогноз/маркетинг</div>
-                    <label>baseShare0</label>
+                    <label>baseShare0 <Help text="Стартовая доля в пуле аудитории семейства (0..1)" /></label>
                     <input className={inputCls} type="number" step={0.01} value={t.forecast?.baseShare0 ?? ""} onChange={e=>updateTariffNested(t.id, "forecast", "baseShare0", Number(e.target.value))} />
-                    <label>adoptionNew</label>
+                    <label>adoptionNew <Help text="Доля новых, кто выбирает этот тариф (0..1)" /></label>
                     <input className={inputCls} type="number" step={0.01} value={t.forecast?.adoptionNew ?? ""} onChange={e=>updateTariffNested(t.id, "forecast", "adoptionNew", Number(e.target.value))} />
-                    <label>churn</label>
+                    <label>churn <Help text="Месячный отток этого тарифа (0..1)" /></label>
                     <input className={inputCls} type="number" step={0.001} value={t.forecast?.churn ?? ""} onChange={e=>updateTariffNested(t.id, "forecast", "churn", Number(e.target.value))} />
-                    <label>upgradeTo (id)</label>
+                    <label>upgradeTo (id) <Help text="Целевой тариф для апгрейда" /></label>
                     <select className={inputCls} value={t.forecast?.upgradeTo ?? ""} onChange={e=>updateTariffNested(t.id, "forecast", "upgradeTo", e.target.value || null)}>
                       <option value="">—</option>
                       {tariffs.map(x=> <option key={x.id} value={x.id}>{x.id}</option>)}
                     </select>
-                    <label>upgradeRate</label>
+                    <label>upgradeRate <Help text="Доля, апгрейдящаяся в месяц (0..1)" /></label>
                     <input className={inputCls} type="number" step={0.001} value={t.forecast?.upgradeRate ?? ""} onChange={e=>updateTariffNested(t.id, "forecast", "upgradeRate", Number(e.target.value))} />
-                    <label>downgradeTo (id)</label>
+                    <label>downgradeTo (id) <Help text="Целевой тариф для даунгрейда" /></label>
                     <select className={inputCls} value={t.forecast?.downgradeTo ?? ""} onChange={e=>updateTariffNested(t.id, "forecast", "downgradeTo", e.target.value || null)}>
                       <option value="">—</option>
                       {tariffs.map(x=> <option key={x.id} value={x.id}>{x.id}</option>)}
                     </select>
-                    <label>downgradeRate</label>
+                    <label>downgradeRate <Help text="Доля, даунгрейдящаяся в месяц (0..1)" /></label>
                     <input className={inputCls} type="number" step={0.001} value={t.forecast?.downgradeRate ?? ""} onChange={e=>updateTariffNested(t.id, "forecast", "downgradeRate", Number(e.target.value))} />
                   </div>
                 )}
@@ -295,9 +300,15 @@ export default function App() {
     {
       id: "cam_free",
       family: "camera",
-      name: "Камеры — Free",
-      description: "Онлайн‑просмотр, базовые уведомления. Без архива.",
-      features: ["Онлайн‑просмотр", "Базовые уведомления", "1 зона детекции"],
+      name: "CAM-FREE",
+      description: "Онлайн‑просмотр и базовые уведомления. Без архива.",
+      features: [
+        "Онлайн‑просмотр",
+        "Базовые уведомления (без превью)",
+        "1 зона детекции",
+        "2 участника доступа",
+        "Локальные сценарии «камера→уведомление»",
+      ],
       price: 0,
       includedCams: 1,
       archiveDays: 0,
@@ -308,9 +319,16 @@ export default function App() {
     {
       id: "cam_addon_49",
       family: "camera",
-      name: "Камеры — уведомления/умный дом",
-      description: "Расширенные уведомления с превью + базовый умный дом.",
-      features: ["Превью в пушах", "Интеграция с Алисой", "2 пользователя"],
+      name: "CAM‑ADDON‑49",
+      description: "Уведомления с превью + базовый умный дом (Алиса).",
+      features: [
+        "Пуш‑уведомления с превью (TTL 48 ч)",
+        "1–2 зоны детекции",
+        "Быстрые команды (вкл/выкл, сигналка)",
+        "Интеграция с Алисой",
+        "До 3 пользователей",
+        "Fair‑Use: ≤60 пушей/сутки, relay ≤15 мин/сутки",
+      ],
       price: 49,
       includedCams: 1,
       archiveDays: 0,
@@ -321,10 +339,18 @@ export default function App() {
     {
       id: "cam_arch_7",
       family: "camera",
-      name: "Камеры — архив 7 дней",
-      description: "Архив 7 дней, лимит 5 ГБ/кам, 1 камера включена.",
-      features: ["Архив 7 дней", "Лимит 5 ГБ/кам", "1 включённая камера"],
-      price: 150,
+      name: "CAM‑ARCH‑7",
+      description: "Архив 7 дней. Лимит 5 ГБ/кам. 1 камера.",
+      features: [
+        "Запись по событиям (Motion)",
+        "Архив 7 дней",
+        "Лимит 5 ГБ/кам (перерасход 7 ₽/ГБ)",
+        "Предпросмотр роликов, экспорт клипов",
+        "3–5 зон детекции",
+        "Приоритетный доступ (CDN/relay Fair‑Use)",
+        "Общий доступ до 5 пользователей",
+      ],
+      price: 149,
       includedCams: 1,
       archiveDays: 7,
       gbCapPerCam: 5,
@@ -334,9 +360,14 @@ export default function App() {
     {
       id: "cam_arch_30",
       family: "camera",
-      name: "Камеры — архив 30 дней",
-      description: "Архив 30 дней, лимит 25 ГБ/кам, 1 камера.",
-      features: ["Архив 30 дней", "Лимит 25 ГБ/кам", "Приоритетный доступ"],
+      name: "CAM‑ARCH‑30",
+      description: "Архив 30 дней. Лимит 25 ГБ/кам. 1 камера.",
+      features: [
+        "Запись по событиям (Motion)",
+        "Архив 30 дней",
+        "Лимит 25 ГБ/кам (перерасход 7 ₽/ГБ)",
+        "Приоритетный доступ (CDN/relay Fair‑Use)",
+      ],
       price: 299,
       includedCams: 1,
       archiveDays: 30,
@@ -347,9 +378,16 @@ export default function App() {
     {
       id: "cam_arch_90",
       family: "camera",
-      name: "Камеры — архив 90 дней",
-      description: "Архив 90 дней, лимит 75 ГБ/кам, 2 камеры.",
-      features: ["Архив 90 дней", "Лимит 75 ГБ/кам", "2 включённые камеры"],
+      name: "CAM‑ARCH‑90",
+      description: "Архив 90 дней. Лимит 75 ГБ/кам. 2 камеры.",
+      features: [
+        "Запись по событиям (Motion)",
+        "Архив 90 дней",
+        "Лимит 75 ГБ/кам (перерасход 7 ₽/ГБ)",
+        "2 камеры включено",
+        "Web‑клиент",
+        "Приоритетная поддержка",
+      ],
       price: 699,
       includedCams: 2,
       archiveDays: 90,
@@ -362,18 +400,28 @@ export default function App() {
     {
       id: "smh_free",
       family: "smarthome",
-      name: "Умный дом — Free",
-      description: "Базовое подключение/Callback.",
-      features: ["Базовый Callback", "Подключение устройств"],
+      name: "SMH‑FREE",
+      description: "Базовое подключение/Callback и 2–3 устройства.",
+      features: [
+        "2–3 базовых устройства",
+        "3 простых сценария",
+        "7 дней логов (узкий журнал)",
+      ],
       price: 0,
       forecast: { baseShare0: 0.8, adoptionNew: 0, churn: 0.04 },
     },
     {
       id: "smh_49",
       family: "smarthome",
-      name: "Умный дом — Basic",
-      description: "Вкл/выкл, расписание, базовые сцены; до 3 пользователей.",
-      features: ["Сценарии если/и/или", "Расписания", "3 пользователя"],
+      name: "SMH‑49",
+      description: "Управление + расписания, базовые сцены, 30 дней логов.",
+      features: [
+        "Вкл/выкл, расписания",
+        "Сценарии И/ИЛИ",
+        "3 пользователя",
+        "Интеграция с Алисой",
+        "30 дней логов",
+      ],
       price: 49,
       forecast: { baseShare0: 0.2, adoptionNew: 0.25, churn: 0.03 },
     },
@@ -382,9 +430,13 @@ export default function App() {
     {
       id: "bundle_89",
       family: "bundle",
-      name: "Комбо — уведомления + умный дом",
-      description: "Уведомления по камерам + базовый умный дом.",
-      features: ["Общий аккаунт семьи", "Единые сценарии", "Приоритет соединения"],
+      name: "BUNDLE‑89",
+      description: "Уведомления по камерам + умный дом (базовый).",
+      features: [
+        "Всё из CAM‑ADDON‑49 + SMH‑49",
+        "Единый доступ семьи и общие плитки",
+        "Fair‑Use: пуши/relay как в CAM‑ADDON‑49",
+      ],
       price: 89,
       includedCams: 1,
       archiveDays: 0,
@@ -393,9 +445,13 @@ export default function App() {
     {
       id: "bundle_arch_7",
       family: "bundle",
-      name: "Комбо + архив 7",
-      description: "Bundle + архив 7 дней, лимиты как у камер.",
-      features: ["Архив 7", "Лимит 5 ГБ/кам", "CDN/Relay приоритет"],
+      name: "BUNDLE‑ARCH‑7",
+      description: "Bundle + архив 7 дней (лимиты как у камер).",
+      features: [
+        "Архив 7 дней",
+        "Лимит 5 ГБ/кам (перерасход 7 ₽/ГБ)",
+        "Объединённые сценарии «камера→действие»",
+      ],
       price: 199,
       includedCams: 1,
       archiveDays: 7,
@@ -406,9 +462,12 @@ export default function App() {
     {
       id: "bundle_arch_30",
       family: "bundle",
-      name: "Комбо + архив 30",
-      description: "Bundle + архив 30 дней, 25 ГБ/кам.",
-      features: ["Архив 30", "Лимит 25 ГБ/кам"],
+      name: "BUNDLE‑ARCH‑30",
+      description: "Bundle + архив 30 дней (25 ГБ/кам).",
+      features: [
+        "Архив 30 дней",
+        "Лимит 25 ГБ/кам (перерасход 7 ₽/ГБ)",
+      ],
       price: 349,
       includedCams: 1,
       archiveDays: 30,
@@ -419,9 +478,13 @@ export default function App() {
     {
       id: "bundle_arch_90",
       family: "bundle",
-      name: "Комбо + архив 90",
-      description: "Bundle + архив 90 дней, 75 ГБ/кам.",
-      features: ["Архив 90", "Лимит 75 ГБ/кам"],
+      name: "BUNDLE‑ARCH‑90",
+      description: "Bundle + архив 90 дней (75 ГБ/кам). 2 камеры.",
+      features: [
+        "Архив 90 дней",
+        "Лимит 75 ГБ/кам (перерасход 7 ₽/ГБ)",
+        "2 камеры включено",
+      ],
       price: 799,
       includedCams: 2,
       archiveDays: 90,
@@ -1421,30 +1484,68 @@ export default function App() {
                     const r = tariffForecast.rows[(detailMonth - 1)];
                     if (!r) return <div className="text-sm text-gray-500">Нет данных</div>;
                     return (
-                      <table className="min-w-[1100px] table-auto text-sm">
-                        <thead>
-                          <tr className="text-left">
-                            <th className={thCls}>Тариф</th>
-                            <th className={thCls}>Семейство</th>
-                            <th className={thCls}>Активные</th>
-                            <th className={thCls}>Выручка</th>
-                            <th className={thCls}>Себестоимость</th>
-                            <th className={thCls}>Прибыль</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {tariffs.map(t => (
-                            <tr key={t.id} className="border-t">
-                              <td className={`${tdTextCls} py-1`}>{t.name}</td>
-                              <td className={tdTextCls}>{t.family}</td>
-                              <td className={tdNumCls}><Num value={r.breakdown.activeByTariff[t.id] || 0} /></td>
-                              <td className={tdNumCls}><Num value={r.breakdown.revByTariff[t.id] || 0} /></td>
-                              <td className={tdNumCls}><Num value={r.breakdown.costByTariff[t.id] || 0} /></td>
-                              <td className={`${tdNumCls} ${(r.breakdown.profitByTariff[t.id] || 0) >= 0 ? "text-green-600" : "text-red-600"}`}><Num value={r.breakdown.profitByTariff[t.id] || 0} /></td>
+                      <>
+                        <table className="min-w-[1100px] table-auto text-sm">
+                          <thead>
+                            <tr className="text-left">
+                              <th className={thCls}>Тариф</th>
+                              <th className={thCls}>Семейство</th>
+                              <th className={thCls}>Активные</th>
+                              <th className={thCls}>Выручка</th>
+                              <th className={thCls}>Себестоимость</th>
+                              <th className={thCls}>Прибыль</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {tariffs.map(t => (
+                              <tr key={t.id} className="border-t">
+                                <td className={`${tdTextCls} py-1`}>{t.name}</td>
+                                <td className={tdTextCls}>{t.family}</td>
+                                <td className={tdNumCls}><Num value={r.breakdown.activeByTariff[t.id] || 0} /></td>
+                                <td className={tdNumCls}><Num value={r.breakdown.revByTariff[t.id] || 0} /></td>
+                                <td className={tdNumCls}><Num value={r.breakdown.costByTariff[t.id] || 0} /></td>
+                                <td className={`${tdNumCls} ${(r.breakdown.profitByTariff[t.id] || 0) >= 0 ? "text-green-600" : "text-red-600"}`}><Num value={r.breakdown.profitByTariff[t.id] || 0} /></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
+                          <div className="h-64 bg-white rounded-xl p-3 border border-gray-100">
+                            <div className="text-sm font-medium mb-2">Структура выручки по семействам</div>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie dataKey="value" data={[
+                                  { name: "Камеры", value: tariffs.filter(t=>t.family==='camera').reduce((s,t)=>s+(r.breakdown.revByTariff[t.id]||0),0) },
+                                  { name: "Умный дом", value: tariffs.filter(t=>t.family==='smarthome').reduce((s,t)=>s+(r.breakdown.revByTariff[t.id]||0),0) },
+                                  { name: "Комбо", value: tariffs.filter(t=>t.family==='bundle').reduce((s,t)=>s+(r.breakdown.revByTariff[t.id]||0),0) },
+                                ]} label>
+                                  {[
+                                    "#6366f1",
+                                    "#10b981",
+                                    "#f59e0b",
+                                  ].map((c, i) => <Cell key={i} fill={c} />)}
+                                </Pie>
+                                <Legend />
+                                <RTooltip formatter={(v: number | string) => new Intl.NumberFormat("ru-RU").format(Number(v))} />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+
+                          <div className="h-64 bg-white rounded-xl p-3 border border-gray-100">
+                            <div className="text-sm font-medium mb-2">Выручка по тарифам (топ)</div>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={tariffs.map(t=>({ name: t.name, revenue: r.breakdown.revByTariff[t.id] || 0 })).sort((a,b)=>b.revenue-a.revenue).slice(0,6)} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={60} />
+                                <YAxis tick={{ fontSize: 11 }} />
+                                <RTooltip formatter={(v: number | string) => new Intl.NumberFormat("ru-RU").format(Number(v))} />
+                                <Bar dataKey="revenue" fill="#2563eb" />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      </>
                     );
                   })()}
                 </div>
