@@ -52,6 +52,37 @@ function Help({ text }: { text: string }) {
   );
 }
 
+// ---- Utils: clamp, safeDiv ----
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+const safeDiv = (a, b) => (b ? a / b : 0);
+
+// ---- Weights: uniform & logistic ----
+function uniformWeights(months) {
+  if (months <= 0) return [];
+  const w = 1 / months;
+  return Array.from({ length: months }, () => w);
+}
+
+function logisticWeights(months, k = 0.5, x0 = null) {
+  if (months <= 0) return [];
+  const mid = x0 == null ? (months + 1) / 2 : clamp(x0, 1, months);
+  const xs = Array.from({ length: months + 1 }, (_, i) => i); // 0..months
+  const cdf = xs.map((t) => 1 / (1 + Math.exp(-k * (t - mid))));
+  const diffs = [];
+  for (let i = 1; i < cdf.length; i++) diffs.push(Math.max(0, cdf[i] - cdf[i - 1]));
+  const sum = diffs.reduce((s, v) => s + v, 0) || 1;
+  return diffs.map((v) => v / sum);
+}
+
+function makeCompetitorSchedule({ mode = "uniform", total, months, params = {} }) {
+  const m = Math.max(1, Math.floor(months || 1));
+  const W =
+    mode === "logistic"
+      ? logisticWeights(m, params.k ?? 0.5, params.x0 ?? null)
+      : uniformWeights(m);
+  return W.map((w) => w * (total || 0)); // абсолютные значения/мес
+}
+
 const inputCls =
   "w-full h-9 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500";
 const thCls = "py-2 px-2 whitespace-nowrap text-xs leading-tight text-gray-600";
@@ -61,8 +92,8 @@ const tdTextCls = "px-2";
 export default function App() {
   // ---------- Global inputs ----------
   const [fx, setFx] = useState(90); // ₽ за 1 USD
-  const [accounts, setAccounts] = useState(4800);
-  const [avgCams, setAvgCams] = useState(2);
+  const [accounts, setAccounts] = useState(22000);
+  const [avgCams, setAvgCams] = useState(1);
   const [cloudShare, setCloudShare] = useState(0.2); // 0..1 доля текущих аккаунтов с облаком
   const [cdnRatio, setCdnRatio] = useState(0.3);
   const [liveHours, setLiveHours] = useState(1);
@@ -97,9 +128,9 @@ export default function App() {
     mix: number; // доля среди облачных аккаунтов
   };
   const [pkgs, setPkgs] = useState<Pkg[]>([
-    { name: "Basic", days: 7, capPerCamGB: 5, includedCams: 1, price: 150, addlCamPrice: 99, overagePerGB: 7, mix: 0.5 },
-    { name: "Standard", days: 30, capPerCamGB: 25, includedCams: 1, price: 299, addlCamPrice: 149, overagePerGB: 7, mix: 0.35 },
-    { name: "Premium", days: 90, capPerCamGB: 75, includedCams: 2, price: 699, addlCamPrice: 199, overagePerGB: 7, mix: 0.15 },
+    { name: "Basic", days: 7, capPerCamGB: 5, includedCams: 1, price: 150, addlCamPrice: 99, overagePerGB: 20, mix: 0.5 },
+    { name: "Standard", days: 30, capPerCamGB: 25, includedCams: 1, price: 299, addlCamPrice: 149, overagePerGB: 20, mix: 0.35 },
+    { name: "Premium", days: 90, capPerCamGB: 75, includedCams: 2, price: 699, addlCamPrice: 199, overagePerGB: 20, mix: 0.15 },
   ]);
 
   // Derived counts
@@ -205,6 +236,14 @@ export default function App() {
   const [salesGrowthPct, setSalesGrowthPct] = useState(0.03); // рост продаж в мес
   const [cloudNewShare, setCloudNewShare] = useState(0.2); // доля облака среди новых
 
+  // ---- Competitor migration ----
+  const [competitorBase, setCompetitorBase] = useState(20000);      // вся база конкурентов, шт
+  const [competitorConversionPct, setCompetitorConversionPct] = useState(0.10); // доля, которую перетянем (0..1)
+  const [competitorHorizon, setCompetitorHorizon] = useState(12);   // за сколько месяцев перетянем
+  const [competitorMode, setCompetitorMode] = useState("uniform");  // "uniform" | "logistic"
+  const [competitorK, setCompetitorK] = useState(0.5);              // крутизна S-кривой (логистическая)
+  const [competitorMid, setCompetitorMid] = useState(null);         // месяц середины S-кривой (null = центр)
+
   type ForecastRow = {
     month: number;
     sales: number;
@@ -234,12 +273,25 @@ export default function App() {
     let activeCloudAcc = Math.round(cloudAccounts); // старт с текущей базы
     let totalCams = camsTotal;
 
+    // суммарная цель перетока за период
+    const competitorTarget = competitorBase * competitorConversionPct;
+    // план на каждый месяц по выбранной кривой
+    const competitorPlan = makeCompetitorSchedule({
+      mode: competitorMode,
+      total: competitorTarget,
+      months: competitorHorizon,
+      params: { k: competitorK, x0: competitorMid }
+    });
+
     for (let m = 1; m <= months; m++) {
       const sales = Math.round(salesStart * Math.pow(1 + salesGrowthPct, m - 1));
       const newAcc = sales / Math.max(avgCams, 1e-9);
       const newCloudAcc = newAcc * cloudNewShare;
 
-      activeCloudAcc = Math.round(activeCloudAcc * (1 - churn) + newCloudAcc);
+      // индекс в плане: 1..competitorHorizon -> 0..competitorHorizon-1
+      const competitorGain = m <= competitorHorizon ? competitorPlan[m - 1] : 0;
+
+      activeCloudAcc = Math.round(activeCloudAcc * (1 - churn) + newCloudAcc + competitorGain);
       totalCams += sales;
 
       const revenue = activeCloudAcc * revPerAcc;
@@ -280,12 +332,12 @@ export default function App() {
     }
 
     return { rows, years };
-  }, [months, churn, salesStart, salesGrowthPct, cloudNewShare, unitRows, pkgs, cloudAccounts, camsTotal, avgCams]);
+  }, [months, churn, salesStart, salesGrowthPct, cloudNewShare, unitRows, pkgs, cloudAccounts, camsTotal, avgCams, competitorBase, competitorConversionPct, competitorHorizon, competitorMode, competitorK, competitorMid]);
 
   const breakevenMonth = useMemo(() => forecast.rows.find(r => r.cumProfit > 0)?.month ?? null, [forecast]);
 
   // ---------------- UI ----------------
-  const [tab, setTab] = useState<"calc" | "forecast">("calc");
+  const [tab, setTab] = useState("calc");
 
   const last = forecast.rows[forecast.rows.length - 1];
 
@@ -307,6 +359,12 @@ export default function App() {
             >
               Прогноз
             </button>
+            <button
+              onClick={() => setTab("tariffs")}
+              className={`px-3 py-1.5 rounded-lg text-sm ${tab === "tariffs" ? "bg-indigo-600 text-white" : "hover:bg-gray-100"}`}
+            >
+              Тарифы
+            </button>
           </div>
         </div>
 
@@ -326,9 +384,9 @@ export default function App() {
               <div className="font-semibold mb-1">Как пользоваться</div>
               <ul className="list-disc pl-5 space-y-1">
                 <li>Во вкладке «Калькулятор» задайте исходные параметры: курс, размер базы, среднее камер/акк, долю облака, трафик (Motion/Full), цены Tuya и Yandex.</li>
-                <li>Отредактируйте <b>пакеты</b>: дни архива, лимит ГБ/кам, включённые камеры, цены, стоимость перерасхода и долю в миксе.</li>
-                <li>Смотрите расчёт <b>на аккаунт</b> и <b>суммарно по портфелю</b>.</li>
-                <li>Во вкладке «Прогноз» укажите: горизонт (мес), churn, продажи в 1‑й месяц, темп роста, долю облака у новых. Ниже — таблица и графики.</li>
+                <li>Отредактируй <b>пакеты</b>: дни архива, лимит ГБ/кам, включённые камеры, цены, стоимость перерасхода и долю в миксе.</li>
+                <li>Смотри расчёт <b>на аккаунт</b> и <b>суммарно по портфелю</b>.</li>
+                <li>Во вкладке «Прогноз» укажи: горизонт (мес), churn, продажи в 1‑й месяц, темп роста, долю облака у новых. Ниже — таблица и графики.</li>
               </ul>
             </div>
           </div>
@@ -554,6 +612,37 @@ export default function App() {
 
                   <label>Доля облака новых</label>
                   <input className={inputCls} type="number" step={0.01} value={cloudNewShare} onChange={e => setCloudNewShare(Number(e.target.value))} />
+
+                  <div className="col-span-2 h-2"></div>
+                  <div className="col-span-2 font-semibold">Приток от конкурентов</div>
+
+                  <label>База конкурентов (акк)</label>
+                  <input className={inputCls} type="number" value={competitorBase} onChange={e=>setCompetitorBase(Number(e.target.value))} />
+
+                  <label>Конверсия конкурентов (0..1) <Help text="Доля базы конкурентов, которую удастся конвертировать в нашу базу за весь период" /></label>
+                  <input className={inputCls} type="number" step={0.01} value={competitorConversionPct} onChange={e=>setCompetitorConversionPct(Number(e.target.value))} />
+
+                  <label>Горизонт конверсии (мес)</label>
+                  <input className={inputCls} type="number" value={competitorHorizon} onChange={e=>setCompetitorHorizon(Number(e.target.value))} />
+
+                  <label>Кривая распределения</label>
+                  <select className={inputCls} value={competitorMode} onChange={e=>setCompetitorMode(e.target.value)}>
+                    <option value="uniform">Равномерная</option>
+                    <option value="logistic">S-кривая (логистическая)</option>
+                  </select>
+
+                  {competitorMode === "logistic" && (
+                    <>
+                      <label>Крутизна S-кривой (k) <Help text="Больше k — резче переход (быстрее рост в середине)" /></label>
+                      <input className={inputCls} type="number" step={0.1} value={competitorK} onChange={e=>setCompetitorK(Number(e.target.value))} />
+
+                      <label>Середина (месяц) <Help text="Где максимум скорости; null — середина горизонта" /></label>
+                      <input className={inputCls} type="number" placeholder="пусто = центр" value={competitorMid ?? ""} onChange={e=>{
+                        const v = e.target.value.trim();
+                        setCompetitorMid(v === "" ? null : Number(v));
+                      }} />
+                    </>
+                  )}
                 </div>
               </Section>
 
@@ -693,10 +782,75 @@ export default function App() {
           </>
         )}
 
+        {tab === "tariffs" && (
+          <Section title="Тарифные линии — обзор по сегментам (без цен)">
+            <div className="text-sm text-gray-700 mb-3">
+              Ниже — функциональные наборы для разных потребительских сегментов. Используйте это описание для сайта/презентаций.
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Камеры — базовый */}
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                <div className="font-semibold mb-2">Камеры — базовый</div>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>Онлайн-просмотр, базовые уведомления</li>
+                  <li>Мини-архив событий (24 часа)</li>
+                  <li>1 виртуальная зона детекции</li>
+                  <li>Доступ для семьи: до 2 пользователей</li>
+                </ul>
+              </div>
+
+              {/* Камеры — расширенный */}
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                <div className="font-semibold mb-2">Камеры — расширенный</div>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>Архив 7/30/90 дней, лимиты ГБ/камера</li>
+                  <li>3–5 зон детекции, превью в уведомлениях</li>
+                  <li>Приоритетный доступ (CDN/relay)</li>
+                  <li>Расширенные уведомления и аналитика</li>
+                </ul>
+              </div>
+
+              {/* Умный дом — базовый */}
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                <div className="font-semibold mb-2">Умный дом — базовый</div>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>Расширенные сценарии (условия «если/и/или»)</li>
+                  <li>Журнал событий 7 дней</li>
+                  <li>Общий доступ: до 3 пользователей</li>
+                  <li>Интеграция с Алисой</li>
+                </ul>
+              </div>
+
+              {/* Умный дом — расширенный */}
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                <div className="font-semibold mb-2">Умный дом — расширенный</div>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>Полная логика сценариев, гости/домохозяйства</li>
+                  <li>Аналитика потребления (розетки и т.п.)</li>
+                  <li>Интеллектуальные уведомления</li>
+                  <li>Интеграции: Telegram/умные колонки</li>
+                </ul>
+              </div>
+
+              {/* Bundle */}
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 lg:col-span-3">
+                <div className="font-semibold mb-2">Bundle (камеры + умный дом)</div>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>Объединённый доступ и общий аккаунт семьи</li>
+                  <li>Синхронизация настроек и резервные копии</li>
+                  <li>Единые сценарии: «камера → действие устройства»</li>
+                  <li>Приоритетное соединение и поддержка</li>
+                </ul>
+              </div>
+            </div>
+          </Section>
+        )}
+
         <Section title="Примечания и допущения">
           <ul className="list-disc pl-5 text-sm text-gray-700 space-y-1">
             <li>Перерасход (overage) считается как разница между фактическим объёмом в архиве и лимитом тарифа по ГБ/камера, если разница положительная.</li>
-            <li>Tuya API/Msgs/Relay распределены по аккаунтам пропорционально общей базе камер; уточняйте тарифы у Tuya — это ориентиры.</li>
+            <li>Tuya API/Msgs/Relay распределены по аккаунтам пропорционально общей базе камер; уточнить тарифы у Tuya — сейчас это ориентиры нужно, в открытом доступе не нашел</li>
             <li>Хранилище Yandex считается: min(факт; лимит) × камер/аккаунт; CDN — доля от хранения (по умолчанию 30%).</li>
             <li>Графики и годовые итоги строятся поверх помесячной модели; в годах агрегируется каждые 12 месяцев.</li>
           </ul>
