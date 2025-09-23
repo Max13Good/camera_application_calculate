@@ -496,22 +496,6 @@ export default function App() {
 
   const [tariffs, setTariffs] = useState<Tariff[]>(DEFAULT_TARIFFS);
 
-  type Pkg = {
-    name: string;
-    days: number;
-    capPerCamGB: number;
-    includedCams: number;
-    price: number;
-    addlCamPrice: number;
-    overagePerGB: number;
-    mix: number; // доля среди облачных аккаунтов
-  };
-  const [pkgs, setPkgs] = useState<Pkg[]>([
-    { name: "Basic", days: 7, capPerCamGB: 5, includedCams: 1, price: 150, addlCamPrice: 99, overagePerGB: 20, mix: 0.5 },
-    { name: "Standard", days: 30, capPerCamGB: 25, includedCams: 1, price: 299, addlCamPrice: 149, overagePerGB: 20, mix: 0.35 },
-    { name: "Premium", days: 90, capPerCamGB: 75, includedCams: 2, price: 699, addlCamPrice: 199, overagePerGB: 20, mix: 0.15 },
-  ]);
-
   // Derived counts
   const camsTotal = useMemo(() => Math.round(accounts * avgCams), [accounts, avgCams]);
   const cloudAccounts = useMemo(() => Math.round(accounts * cloudShare), [accounts, cloudShare]);
@@ -527,9 +511,11 @@ export default function App() {
   const tuyaSDKmoRUB = useMemo(() => (tuyaSDKyrUSD / 12) * fx, [tuyaSDKyrUSD, fx]);
   const camHoursPerDayForRelay = useMemo(() => liveHours * relayShare, [liveHours, relayShare]);
 
-  // Unit economics per package (per cloud account)
-  type UnitRow = {
+  // Unit economics per tariff (per active tariff account)
+  type UnitTariffRow = {
+    id: string;
     name: string;
+    family: Tariff["family"];
     revenueAcc: number;
     overageAcc: number;
     yandexCostAcc: number;
@@ -539,74 +525,121 @@ export default function App() {
     marginAcc: number;
   };
 
-  const unitRows: UnitRow[] = useMemo(() => {
-    const rows: UnitRow[] = [];
+  const unitTariffRows: UnitTariffRow[] = useMemo(() => {
+    const rows: UnitTariffRow[] = [];
     const sdkPerAcc = tuyaSDKmoRUB / Math.max(accounts, 1);
+    const backendOpsPerAcc = (backendFixed + opsFixed) / Math.max(cloudAccounts, 1);
 
     const apiTotal = camsTotal * apiPerDay * monthDays;
     const apiRubTotal = Math.max(0, (apiTotal - 1_000_000) / 1_000_000) * tuyaApiUSDpm * fx;
-    const apiPerAcc = apiRubTotal / Math.max(accounts, 1);
+    const baseApiPerAcc = apiRubTotal / Math.max(accounts, 1);
 
-    const msgsTotal = camsTotal * 10 * monthDays; // эвенты/сообщения
+    const msgsTotal = camsTotal * 10 * monthDays;
     const msgsRubTotal = (msgsTotal / 1_000_000) * tuyaMsgUSDpm * fx;
-    const msgsPerAcc = msgsRubTotal / Math.max(accounts, 1);
+    const baseMsgsPerAcc = msgsRubTotal / Math.max(accounts, 1);
 
-    const relayGbTotal = camsTotal * camHoursPerDayForRelay * 0.72 * monthDays; // ~0.72 GB/h при ~1 Мбит/с
+    const relayGbTotal = camsTotal * camHoursPerDayForRelay * 0.72 * monthDays;
     const relayRubTotal = relayGbTotal * tuyaRelayUSDpGB * fx;
-    const relayPerAcc = relayRubTotal / Math.max(accounts, 1);
+    const baseRelayPerAcc = relayRubTotal / Math.max(accounts, 1);
 
-    const backendOpsPerAcc = (backendFixed + opsFixed) / Math.max(cloudAccounts, 1);
+    for (const t of tariffs) {
+      const vc = t.varCost || {} as any;
+      const mulStorage = vc.yandexStorageRUBpGBmMul ?? 1;
+      const mulCDN = vc.yandexCDNRUBpGBMul ?? 1;
+      const mulCdnRatio = vc.cdnRatioMul ?? 1;
+      const mulApi = vc.tuyaApiMul ?? 1;
+      const mulMsgs = vc.tuyaMsgsMul ?? 1;
+      const mulRelay = vc.tuyaRelayMul ?? 1;
+      const mulGbMotion = vc.avgGbPerDayMotionMul ?? 1;
 
-    for (const pkg of pkgs) {
-      const factPerCamGB = gbPerDay * pkg.days; // фактическая потребность
-      const billablePerCamGB = Math.min(factPerCamGB, pkg.capPerCamGB); // лимит тарифа
-      const storageGBacc = billablePerCamGB * avgCams;
-      const cdnGBacc = storageGBacc * cdnRatio;
+      const archiveDays = t.archiveDays || 0;
+      const camsPerAcc = (t.includedCams || avgCams);
+      const capPerCam = t.gbCapPerCam || 0;
+      const overagePrice = t.overageRUBperGB || 0;
+      const price = t.price || 0;
 
-      const yandexCostAcc = storageGBacc * ycStorageRUBpGBm + cdnGBacc * ycCDNRUBpGB + backendOpsPerAcc;
+      // volume calc
+      const gbPerDayEff = (fullMode ? (bitrateMbps / 8) * 3600 * fullHours / 1024 : gbPerDay) * mulGbMotion;
+      const factPerCamGB = archiveDays > 0 ? gbPerDayEff * archiveDays : 0;
+      const billPerCamGB = capPerCam > 0 ? Math.min(factPerCamGB, capPerCam) : factPerCamGB;
+      const storageGBacc = billPerCamGB * camsPerAcc;
+      const cdnGBacc = storageGBacc * (cdnRatio * mulCdnRatio);
 
-      const extraCams = Math.max(0, avgCams - pkg.includedCams);
-      const revenueAcc = pkg.price + extraCams * pkg.addlCamPrice;
-      const overagePerCam = Math.max(0, factPerCamGB - pkg.capPerCamGB);
-      const overageAcc = overagePerCam * avgCams * pkg.overagePerGB;
+      const yandexCostAcc = storageGBacc * (ycStorageRUBpGBm * mulStorage) + cdnGBacc * (ycCDNRUBpGB * mulCDN) + backendOpsPerAcc;
 
+      const overGBacc = Math.max(0, factPerCamGB - (capPerCam || 0)) * camsPerAcc;
+      const overageAcc = overGBacc * overagePrice;
+
+      const apiPerAcc = baseApiPerAcc * mulApi;
+      const msgsPerAcc = baseMsgsPerAcc * mulMsgs;
+      const relayPerAcc = baseRelayPerAcc * mulRelay;
       const tuyaCostAcc = sdkPerAcc + apiPerAcc + msgsPerAcc + relayPerAcc;
-      const costAcc = yandexCostAcc + tuyaCostAcc;
-      const profitAcc = revenueAcc + overageAcc - costAcc;
-      const marginAcc = (revenueAcc + overageAcc) > 0 ? (profitAcc / (revenueAcc + overageAcc)) * 100 : 0;
 
-      rows.push({ name: pkg.name, revenueAcc, overageAcc, yandexCostAcc, tuyaCostAcc, costAcc, profitAcc, marginAcc });
+      const revenueAcc = price + overageAcc;
+      const costAcc = yandexCostAcc + tuyaCostAcc;
+      const profitAcc = revenueAcc - costAcc;
+      const marginAcc = revenueAcc > 0 ? (profitAcc / revenueAcc) * 100 : 0;
+
+      rows.push({ id: t.id, name: t.name, family: t.family, revenueAcc, overageAcc, yandexCostAcc, tuyaCostAcc, costAcc, profitAcc, marginAcc });
     }
     return rows;
-  }, [pkgs, avgCams, gbPerDay, cdnRatio, ycStorageRUBpGBm, ycCDNRUBpGB, backendFixed, opsFixed, tuyaSDKmoRUB, accounts, camsTotal, apiPerDay, monthDays, tuyaApiUSDpm, fx, tuyaMsgUSDpm, liveHours, relayShare, tuyaRelayUSDpGB, cloudAccounts, camHoursPerDayForRelay]);
+  }, [
+    tariffs,
+    // globals
+    avgCams,
+    gbPerDay,
+    fullMode,
+    bitrateMbps,
+    fullHours,
+    cdnRatio,
+    ycStorageRUBpGBm,
+    ycCDNRUBpGB,
+    backendFixed,
+    opsFixed,
+    tuyaSDKmoRUB,
+    accounts,
+    camsTotal,
+    apiPerDay,
+    monthDays,
+    tuyaApiUSDpm,
+    fx,
+    tuyaMsgUSDpm,
+    camHoursPerDayForRelay,
+    tuyaRelayUSDpGB,
+    cloudAccounts,
+  ]);
 
-  // Portfolio summary (mix × cloud accounts)
-  const portfolio = useMemo(() => {
-    const rows = unitRows.map(r => {
-      const mix = pkgs.find(p => p.name === r.name)?.mix ?? 0;
-      const accs = cloudAccounts * mix;
-      return {
-        name: r.name,
-        accs,
-        revenue: (r.revenueAcc + r.overageAcc) * accs,
-        yCost: r.yandexCostAcc * accs,
-        tCost: r.tuyaCostAcc * accs,
-        cost: r.costAcc * accs,
-        profit: r.profitAcc * accs,
-      };
+  // Portfolio now (by families pools)
+  const tariffPortfolio = useMemo(() => {
+    const familyPools: Record<Tariff["family"], number> = {
+      camera: Math.round(cloudAccounts),
+      smarthome: Math.round(smhBaseStart),
+      bundle: Math.round(bundleBaseStart),
+    };
+    const rows = tariffs.map(t => {
+      const pool = familyPools[t.family] || 0;
+      const ts = tariffs.filter(x => x.family === t.family);
+      const sumBase = ts.reduce((s, x) => s + (x.forecast?.baseShare0 || 0), 0) || 1;
+      const share = (t.forecast?.baseShare0 || 0) / sumBase;
+      const accs = Math.round(pool * share);
+      const u = unitTariffRows.find(r => r.id === t.id);
+      const revenue = (u ? (u.revenueAcc) : 0) * accs;
+      const yCost = (u ? u.yandexCostAcc : 0) * accs;
+      const tCost = (u ? u.tuyaCostAcc : 0) * accs;
+      const cost = (u ? u.costAcc : 0) * accs;
+      const profit = (u ? u.profitAcc : 0) * accs;
+      return { id: t.id, name: t.name, family: t.family, accs, revenue, yCost, tCost, cost, profit };
     });
-    const totals = rows.reduce(
-      (s, r) => ({
-        revenue: s.revenue + r.revenue,
-        yCost: s.yCost + r.yCost,
-        tCost: s.tCost + r.tCost,
-        cost: s.cost + r.cost,
-        profit: s.profit + r.profit,
-      }),
-      { revenue: 0, yCost: 0, tCost: 0, cost: 0, profit: 0 }
-    );
+    const totals = rows.reduce((s, r) => ({
+      accs: s.accs + r.accs,
+      revenue: s.revenue + r.revenue,
+      yCost: s.yCost + r.yCost,
+      tCost: s.tCost + r.tCost,
+      cost: s.cost + r.cost,
+      profit: s.profit + r.profit,
+    }), { accs: 0, revenue: 0, yCost: 0, tCost: 0, cost: 0, profit: 0 });
     return { rows, totals };
-  }, [unitRows, pkgs, cloudAccounts]);
+  }, [tariffs, unitTariffRows, cloudAccounts, smhBaseStart, bundleBaseStart]);
 
   // ---------------- PROGNOZ (months/years) ----------------
   const [months, setMonths] = useState(24);
@@ -647,82 +680,8 @@ export default function App() {
     cumProfit: number;
   };
 
-  const forecast = useMemo(() => {
-    // Взвешенные средние per-account по портфелю
-    const mixMap: Record<string, number> = Object.fromEntries(pkgs.map(p => [p.name, p.mix]));
-    const w = (key: keyof UnitRow): number =>
-      unitRows.reduce((s, r) => s + (r[key] as number) * (mixMap[r.name] ?? 0), 0);
-
-    const revPerAcc = w("revenueAcc") + w("overageAcc");
-    const yCostPerAcc = w("yandexCostAcc");
-    const tCostPerAcc = w("tuyaCostAcc");
-
-    const rows: ForecastRow[] = [];
-    let activeCloudAcc = Math.round(cloudAccounts); // старт с текущей базы
-    let totalCams = camsTotal;
-
-    // суммарная цель перетока за период
-    const competitorTarget = competitorBase * competitorConversionPct;
-    // план на каждый месяц по выбранной кривой
-    const competitorPlan = makeCompetitorSchedule({
-      mode: competitorMode,
-      total: competitorTarget,
-      months: competitorHorizon,
-      params: { k: competitorK, x0: competitorMid }
-    });
-
-    for (let m = 1; m <= months; m++) {
-      const sales = Math.round(salesStart * Math.pow(1 + salesGrowthPct, m - 1));
-      const newAcc = sales / Math.max(avgCams, 1e-9);
-      const newCloudAcc = newAcc * cloudNewShare;
-
-      // индекс в плане: 1..competitorHorizon -> 0..competitorHorizon-1
-      const competitorGain = m <= competitorHorizon ? competitorPlan[m - 1] : 0;
-
-      activeCloudAcc = Math.round(activeCloudAcc * (1 - churn) + newCloudAcc + competitorGain);
-      totalCams += sales;
-
-      const revenue = activeCloudAcc * revPerAcc;
-      const yCost = activeCloudAcc * yCostPerAcc;
-      const tCost = activeCloudAcc * tCostPerAcc; // приближение
-      const totalCost = yCost + tCost;
-      const profit = revenue - totalCost;
-
-      rows.push({
-        month: m,
-        sales,
-        newAcc: Math.round(newAcc),
-        newCloudAcc: Math.round(newCloudAcc),
-        activeCloudAcc,
-        totalCams,
-        revenue,
-        yCost,
-        tCost,
-        totalCost,
-        profit,
-        cumProfit: (rows.length ? rows[rows.length - 1].cumProfit : 0) + profit,
-      });
-    }
-
-    // Годы (агрегация по 12 мес)
-    const years = [] as { year: number; revenue: number; cost: number; profit: number; endActiveCloudAcc: number; endTotalCams: number }[];
-    for (let i = 0; i < rows.length; i += 12) {
-      const chunk = rows.slice(i, i + 12);
-      if (!chunk.length) break;
-      years.push({
-        year: i / 12 + 1,
-        revenue: chunk.reduce((s, r) => s + r.revenue, 0),
-        cost: chunk.reduce((s, r) => s + r.totalCost, 0),
-        profit: chunk.reduce((s, r) => s + r.profit, 0),
-        endActiveCloudAcc: chunk[chunk.length - 1].activeCloudAcc,
-        endTotalCams: chunk[chunk.length - 1].totalCams,
-      });
-    }
-
-    return { rows, years };
-  }, [months, churn, salesStart, salesGrowthPct, cloudNewShare, unitRows, pkgs, cloudAccounts, camsTotal, avgCams, competitorBase, competitorConversionPct, competitorHorizon, competitorMode, competitorK, competitorMid]);
-
-  const breakevenMonth = useMemo(() => forecast.rows.find(r => r.cumProfit > 0)?.month ?? null, [forecast]);
+  // breakeven from new tariff forecast
+  const breakevenMonth = useMemo(() => tariffForecast.rows.find(r => r.cumProfit > 0)?.month ?? null, [tariffForecast]);
 
   // ---------- Helper: distribute by adoption within family ----------
   function distributeByAdoption(totalNew: number, family: Tariff["family"], all: Tariff[]) {
@@ -977,7 +936,7 @@ export default function App() {
   // ---------------- UI ----------------
   const [tab, setTab] = useState("calc");
 
-  const last = forecast.rows[forecast.rows.length - 1];
+  const lastTar = tariffForecast.rows[tariffForecast.rows.length - 1];
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
@@ -1112,60 +1071,33 @@ export default function App() {
               </Section>
             </div>
 
-            {/* Packages table */}
-            <Section title="Пакеты (редактируемые)">
-              <div className="overflow-x-auto">
-                <table className="min-w-[1100px] table-auto text-sm">
-                  <thead>
-                    <tr className="text-left">
-                      <th className={thCls}>Пакет</th>
-                      <th className={thCls}>Дней</th>
-                      <th className={thCls}>Лимит ГБ/кам</th>
-                      <th className={thCls}>Вкл. камер</th>
-                      <th className={thCls}>Цена/мес</th>
-                      <th className={thCls}>Доп. камера</th>
-                      <th className={thCls}>Перерасход ₽/ГБ</th>
-                      <th className={thCls}>Микс</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pkgs.map((p, idx) => (
-                      <tr key={p.name} className="border-t">
-                        <td className={`${tdTextCls} font-medium py-1`}>{p.name}</td>
-                        <td className={tdTextCls}><input className={`${inputCls} w-24`} type="number" value={p.days} onChange={e => { const next=[...pkgs]; next[idx] = { ...p, days: Number(e.target.value) }; setPkgs(next); }} /></td>
-                        <td className={tdTextCls}><input className={`${inputCls} w-28`} type="number" value={p.capPerCamGB} onChange={e => { const next=[...pkgs]; next[idx] = { ...p, capPerCamGB: Number(e.target.value) }; setPkgs(next); }} /></td>
-                        <td className={tdTextCls}><input className={`${inputCls} w-24`} type="number" value={p.includedCams} onChange={e => { const next=[...pkgs]; next[idx] = { ...p, includedCams: Number(e.target.value) }; setPkgs(next); }} /></td>
-                        <td className={tdTextCls}><input className={`${inputCls} w-28`} type="number" value={p.price} onChange={e => { const next=[...pkgs]; next[idx] = { ...p, price: Number(e.target.value) }; setPkgs(next); }} /></td>
-                        <td className={tdTextCls}><input className={`${inputCls} w-28`} type="number" value={p.addlCamPrice} onChange={e => { const next=[...pkgs]; next[idx] = { ...p, addlCamPrice: Number(e.target.value) }; setPkgs(next); }} /></td>
-                        <td className={tdTextCls}><input className={`${inputCls} w-28`} type="number" value={p.overagePerGB} onChange={e => { const next=[...pkgs]; next[idx] = { ...p, overagePerGB: Number(e.target.value) }; setPkgs(next); }} /></td>
-                        <td className={tdTextCls}><input className={`${inputCls} w-24`} type="number" step={0.01} value={p.mix} onChange={e => { const next=[...pkgs]; next[idx] = { ...p, mix: Number(e.target.value) }; setPkgs(next); }} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            {/* Tariffs editor in Calc */}
+            <Section title="Тарифы (редактируемые)">
+              <TariffsEditor tariffs={tariffs} setTariffs={setTariffs} defaults={DEFAULT_TARIFFS} />
             </Section>
 
-            {/* Unit economics */}
-            <Section title="Юнит‑экономика по пакетам (на 1 облачный аккаунт)">
+            {/* Unit economics per tariff */}
+            <Section title="Юнит‑экономика по тарифам (на 1 активный аккаунт тарифа)">
               <div className="overflow-x-auto">
                 <table className="min-w-[1100px] table-auto text-sm">
                   <thead>
                     <tr className="text-left">
-                      <th className={thCls}>Пакет</th>
-                      <th className={thCls}>Выручка/акк <Help text="Цена пакета + оплата за доп. камеры сверх включённых." /></th>
-                      <th className={thCls}>Overage/акк <Help text="Плата за перерасход лимита ГБ (факт − лимит, если > 0)." /></th>
-                      <th className={thCls}>Yandex cost/акк <Help text="Хранилище + CDN + доля фиксированных затрат." /></th>
-                      <th className={thCls}>Tuya cost/акк <Help text="SDK + API + Msgs + Relay, распределённые на аккаунт." /></th>
+                      <th className={thCls}>Тариф</th>
+                      <th className={thCls}>Семейство</th>
+                      <th className={thCls}>Выручка/акк</th>
+                      <th className={thCls}>Overage/акк</th>
+                      <th className={thCls}>Yandex/акк</th>
+                      <th className={thCls}>Tuya/акк</th>
                       <th className={thCls}>Себестоимость/акк</th>
                       <th className={thCls}>Прибыль/акк</th>
                       <th className={thCls}>Маржа %</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {unitRows.map(r => (
-                      <tr key={r.name} className="border-t">
+                    {unitTariffRows.map(r => (
+                      <tr key={r.id} className="border-t">
                         <td className={`${tdTextCls} font-medium py-1`}>{r.name}</td>
+                        <td className={tdTextCls}>{r.family}</td>
                         <td className={tdNumCls}><Num value={r.revenueAcc} /></td>
                         <td className={tdNumCls}><Num value={r.overageAcc} /></td>
                         <td className={tdNumCls}><Num value={r.yandexCostAcc} /></td>
@@ -1180,8 +1112,8 @@ export default function App() {
               </div>
             </Section>
 
-            {/* Portfolio summary */}
-            <Section title="Суммарно по портфелю (микс × облачные аккаунты)">
+            {/* Portfolio now */}
+            <Section title="Срез сейчас по портфелю (по семействам)">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div className="bg-gray-50 rounded-xl p-3"><div className="text-gray-500">Аккаунтов всего</div><div className="text-xl font-semibold"><Num value={accounts} /></div></div>
                 <div className="bg-gray-50 rounded-xl p-3"><div className="text-gray-500">Облачных аккаунтов</div><div className="text-xl font-semibold"><Num value={cloudAccounts} /></div></div>
@@ -1192,8 +1124,9 @@ export default function App() {
                 <table className="min-w-[1100px] table-auto text-sm">
                   <thead>
                     <tr className="text-left">
-                      <th className={thCls}>Пакет</th>
-                      <th className={thCls}>Облачные аккаунты</th>
+                      <th className={thCls}>Тариф</th>
+                      <th className={thCls}>Семейство</th>
+                      <th className={thCls}>Активные (оценка)</th>
                       <th className={thCls}>Выручка</th>
                       <th className={thCls}>Yandex cost</th>
                       <th className={thCls}>Tuya cost</th>
@@ -1202,9 +1135,10 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {portfolio.rows.map(r => (
-                      <tr key={r.name} className="border-t">
+                    {tariffPortfolio.rows.map(r => (
+                      <tr key={r.id} className="border-t">
                         <td className={`${tdTextCls} font-medium py-1`}>{r.name}</td>
+                        <td className={tdTextCls}>{r.family}</td>
                         <td className={tdNumCls}><Num value={r.accs} /></td>
                         <td className={tdNumCls}><Num value={r.revenue} /></td>
                         <td className={tdNumCls}><Num value={r.yCost} /></td>
@@ -1218,11 +1152,12 @@ export default function App() {
                     <tr className="border-t font-semibold">
                       <td className="py-2">ИТОГО</td>
                       <td></td>
-                      <td className={tdNumCls}><Num value={portfolio.totals.revenue} /></td>
-                      <td className={tdNumCls}><Num value={portfolio.totals.yCost} /></td>
-                      <td className={tdNumCls}><Num value={portfolio.totals.tCost} /></td>
-                      <td className={tdNumCls}><Num value={portfolio.totals.cost} /></td>
-                      <td className={`${tdNumCls} ${portfolio.totals.profit >= 0 ? "text-green-600" : "text-red-600"}`}><Num value={portfolio.totals.profit} /></td>
+                      <td className={tdNumCls}><Num value={tariffPortfolio.totals.accs} /></td>
+                      <td className={tdNumCls}><Num value={tariffPortfolio.totals.revenue} /></td>
+                      <td className={tdNumCls}><Num value={tariffPortfolio.totals.yCost} /></td>
+                      <td className={tdNumCls}><Num value={tariffPortfolio.totals.tCost} /></td>
+                      <td className={tdNumCls}><Num value={tariffPortfolio.totals.cost} /></td>
+                      <td className={`${tdNumCls} ${tariffPortfolio.totals.profit >= 0 ? "text-green-600" : "text-red-600"}`}><Num value={tariffPortfolio.totals.profit} /></td>
                     </tr>
                   </tfoot>
                 </table>
@@ -1309,133 +1244,20 @@ export default function App() {
                   <div className="font-semibold">{breakevenMonth ? `Месяц ${breakevenMonth}` : "—"}</div>
 
                   <div className="text-gray-500">Выручка / мес (последний)</div>
-                  <div className="font-semibold"><Num value={last?.revenue ?? 0} /></div>
+                  <div className="font-semibold"><Num value={lastTar?.revenue ?? 0} /></div>
 
                   <div className="text-gray-500">Себестоимость / мес (последний)</div>
-                  <div className="font-semibold"><Num value={last?.totalCost ?? 0} /></div>
+                  <div className="font-semibold"><Num value={lastTar?.cost ?? 0} /></div>
 
-                  <div className="text-gray-500">Активные облачные аккаунты (последний)</div>
-                  <div className="font-semibold"><Num value={last?.activeCloudAcc ?? 0} /></div>
+                  <div className="text-gray-500">Активные (всего, последний)</div>
+                  <div className="font-semibold"><Num value={(lastTar ? (lastTar.activeByFamily.camera + lastTar.activeByFamily.smarthome + lastTar.activeByFamily.bundle) : 0)} /></div>
                 </div>
               </Section>
 
-              <Section title="Годовая сводка (агрегировано)">
-                <div className="overflow-x-auto">
-                  <table className="min-w-[900px] table-auto text-sm">
-                    <thead>
-                      <tr className="text-left">
-                        <th className={thCls}>Год</th>
-                        <th className={thCls}>Выручка</th>
-                        <th className={thCls}>Себестоимость</th>
-                        <th className={thCls}>Прибыль</th>
-                        <th className={thCls}>Облачные (конец)</th>
-                        <th className={thCls}>Камер всего (конец)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {forecast.years.map(y => (
-                        <tr key={y.year} className="border-t">
-                          <td className={`${tdTextCls} py-1`}>{y.year}</td>
-                          <td className={tdNumCls}><Num value={y.revenue} /></td>
-                          <td className={tdNumCls}><Num value={y.cost} /></td>
-                          <td className={`${tdNumCls} ${y.profit >= 0 ? "text-green-600" : "text-red-600"}`}><Num value={y.profit} /></td>
-                          <td className={tdNumCls}><Num value={y.endActiveCloudAcc} /></td>
-                          <td className={tdNumCls}><Num value={y.endTotalCams} /></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Section>
             </div>
 
-            <Section title="Прогноз — таблица по месяцам (описания в подсказках)">
-              <div className="overflow-x-auto">
-                <table className="min-w-[1200px] table-auto text-xs md:text-sm">
-                  <thead>
-                    <tr className="text-left">
-                      <th className={thCls}>Мес <Help text="Номер месяца от 1 до горизонта" /></th>
-                      <th className={thCls}>Продажи камер <Help text="Сколько камер продано в месяц" /></th>
-                      <th className={thCls}>Новые акк <Help text="Продажи / камер на акк" /></th>
-                      <th className={thCls}>Новые облачные <Help text="Новые акк × доля облака" /></th>
-                      <th className={thCls}>Активные облачные <Help text="Прошлые×(1−churn)+новые" /></th>
-                      <th className={thCls}>Камер всего <Help text="Кумулятивно: камеры прошлого + продажи" /></th>
-                      <th className={thCls}>Выручка</th>
-                      <th className={thCls}>Yandex cost</th>
-                      <th className={thCls}>Tuya cost</th>
-                      <th className={thCls}>Себестоимость</th>
-                      <th className={thCls}>Прибыль</th>
-                      <th className={thCls}>Накопит. прибыль</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {forecast.rows.map(r => (
-                      <tr key={r.month} className="border-t">
-                        <td className={`${tdTextCls} py-1`}>{r.month}</td>
-                        <td className={tdNumCls}><Num value={r.sales} /></td>
-                        <td className={tdNumCls}><Num value={r.newAcc} /></td>
-                        <td className={tdNumCls}><Num value={r.newCloudAcc} /></td>
-                        <td className={tdNumCls}><Num value={r.activeCloudAcc} /></td>
-                        <td className={tdNumCls}><Num value={r.totalCams} /></td>
-                        <td className={tdNumCls}><Num value={r.revenue} /></td>
-                        <td className={tdNumCls}><Num value={r.yCost} /></td>
-                        <td className={tdNumCls}><Num value={r.tCost} /></td>
-                        <td className={tdNumCls}><Num value={r.totalCost} /></td>
-                        <td className={`${tdNumCls} ${r.profit >= 0 ? "text-green-600" : "text-red-600"}`}><Num value={r.profit} /></td>
-                        <td className={`${tdNumCls} ${r.cumProfit >= 0 ? "text-green-600" : "text-red-600"}`}><Num value={r.cumProfit} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Section>
-
-            <Section title="Графики">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="h-64 bg-white rounded-xl p-3 border border-gray-100">
-                  <div className="text-sm font-medium mb-2">Выручка vs Себестоимость vs Прибыль (помесячно)</div>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={forecast.rows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#8884d8" stopOpacity={0.4} />
-                          <stop offset="95%" stopColor="#8884d8" stopOpacity={0} />
-                        </linearGradient>
-                        <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#82ca9d" stopOpacity={0.4} />
-                          <stop offset="95%" stopColor="#82ca9d" stopOpacity={0} />
-                        </linearGradient>
-                        <linearGradient id="g3" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#ff7300" stopOpacity={0.4} />
-                          <stop offset="95%" stopColor="#ff7300" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                      <YAxis tick={{ fontSize: 11 }} />
-                      <RTooltip formatter={(v: number | string) => new Intl.NumberFormat("ru-RU").format(Number(v))} />
-                      <Legend />
-                      <Area type="monotone" dataKey="revenue" name="Выручка" stroke="#8884d8" fill="url(#g1)" />
-                      <Area type="monotone" dataKey="totalCost" name="Себестоимость" stroke="#82ca9d" fill="url(#g2)" />
-                      <Area type="monotone" dataKey="profit" name="Прибыль" stroke="#ff7300" fill="url(#g3)" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="h-64 bg-white rounded-xl p-3 border border-gray-100">
-                  <div className="text-sm font-medium mb-2">Рост базы (облачные аккаунты)</div>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <RLineChart data={forecast.rows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                      <YAxis tick={{ fontSize: 11 }} />
-                      <RTooltip formatter={(v: number | string) => new Intl.NumberFormat("ru-RU").format(Number(v))} />
-                      <Legend />
-                      <Line type="monotone" dataKey="activeCloudAcc" name="Облачные аккаунты" stroke="#2563eb" />
-                    </RLineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </Section>
+            {/* Tariff forecast summary */}
+            <Section title="Прогноз по тарифам — сводка по месяцам">
 
             {/* Tariff forecast summary */}
             <Section title="Прогноз по тарифам — сводка по месяцам">
@@ -1550,6 +1372,54 @@ export default function App() {
                   })()}
                 </div>
               )}
+            </Section>
+
+            {/* Графики v7 */}
+            <Section title="Графики (v7)">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="h-64 bg-white rounded-xl p-3 border border-gray-100">
+                  <div className="text-sm font-medium mb-2">Выручка vs Себестоимость vs Прибыль (помесячно)</div>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={tariffForecast.rows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#8884d8" stopOpacity={0.4} />
+                          <stop offset="95%" stopColor="#8884d8" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#82ca9d" stopOpacity={0.4} />
+                          <stop offset="95%" stopColor="#82ca9d" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="g3" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#ff7300" stopOpacity={0.4} />
+                          <stop offset="95%" stopColor="#ff7300" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <RTooltip formatter={(v: number | string) => new Intl.NumberFormat("ru-RU").format(Number(v))} />
+                      <Legend />
+                      <Area type="monotone" dataKey="revenue" name="Выручка" stroke="#8884d8" fill="url(#g1)" />
+                      <Area type="monotone" dataKey="cost" name="Себестоимость" stroke="#82ca9d" fill="url(#g2)" />
+                      <Area type="monotone" dataKey="profit" name="Прибыль" stroke="#ff7300" fill="url(#g3)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="h-64 bg-white rounded-xl p-3 border border-gray-100">
+                  <div className="text-sm font-medium mb-2">Рост активной базы (в сумме)</div>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RLineChart data={tariffForecast.rows.map(r => ({ ...r, activeTotal: r.activeByFamily.camera + r.activeByFamily.smarthome + r.activeByFamily.bundle }))} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <RTooltip formatter={(v: number | string) => new Intl.NumberFormat("ru-RU").format(Number(v))} />
+                      <Legend />
+                      <Line type="monotone" dataKey="activeTotal" name="Активные всего" stroke="#2563eb" />
+                    </RLineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             </Section>
           </>
         )}
