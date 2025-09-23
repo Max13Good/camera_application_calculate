@@ -16,6 +16,12 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+import Section from "./components/Section";
+import Num from "./components/Num";
+import Help from "./components/Help";
+import TariffsEditor from "./components/TariffsEditor";
+import BaseMixEditor from "./components/BaseMixEditor";
+import { useLocalStorageState } from "./hooks/useLocalStorage";
 
 // ------------------------------------------------------------
 // Mini App v3 — Cloud Pricing & Profit Calculator (RU)
@@ -27,7 +33,7 @@ import {
 // - TypeScript-фиксы (нет .at; типизированы Tooltip и агрегаторы.)
 // ------------------------------------------------------------
 
-function Section({
+export function Section_OLD({
   title,
   children,
 }: {
@@ -42,7 +48,7 @@ function Section({
   );
 }
 
-function Num({ value, digits = 0 }: { value: number; digits?: number }) {
+export function Num_OLD({ value, digits = 0 }: { value: number; digits?: number }) {
   const fmt = useMemo(
     () =>
       new Intl.NumberFormat("ru-RU", {
@@ -58,7 +64,7 @@ function Num({ value, digits = 0 }: { value: number; digits?: number }) {
   );
 }
 
-function Help({ text }: { text: string }) {
+export function Help_OLD({ text }: { text: string }) {
   return (
     <span
       className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-[10px] font-semibold cursor-help"
@@ -69,7 +75,7 @@ function Help({ text }: { text: string }) {
   );
 }
 
-function TariffsEditor({
+export function TariffsEditor_OLD({
   tariffs,
   setTariffs,
   defaults,
@@ -687,7 +693,7 @@ function TariffsEditor({
   );
 }
 
-function BaseMixEditor({
+export function BaseMixEditor_OLD({
   tariffs,
   setTariffs,
 }: {
@@ -831,17 +837,22 @@ function BaseMixEditor({
 }
 
 // ---- Utils: clamp, safeDiv ----
-const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-const safeDiv = (a, b) => (b ? a / b : 0);
+export const clamp = (v: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, v));
+export const safeDiv = (a: number, b: number) => (b ? a / b : 0);
 
 // ---- Weights: uniform & logistic ----
-function uniformWeights(months) {
+function uniformWeights(months: number): number[] {
   if (months <= 0) return [];
   const w = 1 / months;
   return Array.from({ length: months }, () => w);
 }
 
-function logisticWeights(months, k = 0.5, x0 = null) {
+function logisticWeights(
+  months: number,
+  k: number = 0.5,
+  x0: number | null = null
+): number[] {
   if (months <= 0) return [];
   const mid = x0 == null ? (months + 1) / 2 : clamp(x0, 1, months);
   const xs = Array.from({ length: months + 1 }, (_, i) => i); // 0..months
@@ -858,7 +869,12 @@ function makeCompetitorSchedule({
   total,
   months,
   params = {},
-}) {
+}: {
+  mode?: "uniform" | "logistic";
+  total: number;
+  months: number;
+  params?: { k?: number; x0?: number | null };
+}): number[] {
   const m = Math.max(1, Math.floor(months || 1));
   const W =
     mode === "logistic"
@@ -875,40 +891,40 @@ const tdTextCls = "px-2";
 
 export default function App() {
   // ---------- Global inputs ----------
-  const [fx, setFx] = useState(90); // ₽ за 1 USD
-  const [accounts, setAccounts] = useState(22000);
-  const [avgCams, setAvgCams] = useState(1);
-  const [cloudShare, setCloudShare] = useState(0.2); // 0..1 доля текущих аккаунтов с облаком
+  const [fx, setFx] = useLocalStorageState("app.fx", 90); // ₽ за 1 USD
+  const [accounts, setAccounts] = useLocalStorageState("app.accounts", 22000);
+  const [avgCams, setAvgCams] = useLocalStorageState("app.avgCams", 1);
+  const [cloudShare, setCloudShare] = useLocalStorageState("app.cloudShare", 0.2); // 0..1 доля текущих аккаунтов с облаком
   // Коэффициент нагрузки бесплатников (0..1): сколько от платного аккаунта
-  const [freeLoadShare, setFreeLoadShare] = useState(0.25);
+  const [freeLoadShare, setFreeLoadShare] = useLocalStorageState("app.freeLoadShare", 0.25);
   // Распределение текущей базы: платящие vs бесплатные, и сплит по семействам
-  const [paidSplit, setPaidSplit] = useState({
+  const [paidSplit, setPaidSplit] = useLocalStorageState("app.paidSplit", {
     camera: 0.6,
     smarthome: 0.2,
     bundle: 0.2,
   });
-  const [freeSplit, setFreeSplit] = useState({ camera: 0.7, smarthome: 0.3 });
-  const [cdnRatio, setCdnRatio] = useState(0.25);
-  const [liveHours, setLiveHours] = useState(1);
-  const [relayShare, setRelayShare] = useState(0.15);
-  const [apiPerDay, setApiPerDay] = useState(70);
-  const [monthDays, setMonthDays] = useState(30);
-  const [backendFixed, setBackendFixed] = useState(15000);
-  const [opsFixed, setOpsFixed] = useState(1000);
+  const [freeSplit, setFreeSplit] = useLocalStorageState("app.freeSplit", { camera: 0.7, smarthome: 0.3 });
+  const [cdnRatio, setCdnRatio] = useLocalStorageState("app.cdnRatio", 0.25);
+  const [liveHours, setLiveHours] = useLocalStorageState("app.liveHours", 1);
+  const [relayShare, setRelayShare] = useLocalStorageState("app.relayShare", 0.15);
+  const [apiPerDay, setApiPerDay] = useLocalStorageState("app.apiPerDay", 70);
+  const [monthDays, setMonthDays] = useLocalStorageState("app.monthDays", 30);
+  const [backendFixed, setBackendFixed] = useLocalStorageState("app.backendFixed", 15000);
+  const [opsFixed, setOpsFixed] = useLocalStorageState("app.opsFixed", 1000);
 
   // Recording mode
-  const [fullMode, setFullMode] = useState(false);
-  const [bitrateMbps, setBitrateMbps] = useState(1.5);
-  const [fullHours, setFullHours] = useState(24);
-  const [gbPerDayMotion, setGbPerDayMotion] = useState(1);
+  const [fullMode, setFullMode] = useLocalStorageState("app.fullMode", false);
+  const [bitrateMbps, setBitrateMbps] = useLocalStorageState("app.bitrateMbps", 1.5);
+  const [fullHours, setFullHours] = useLocalStorageState("app.fullHours", 24);
+  const [gbPerDayMotion, setGbPerDayMotion] = useLocalStorageState("app.gbPerDayMotion", 1);
 
   // Unit prices
-  const [tuyaSDKyrUSD, setTuyaSDKyrUSD] = useState(5000);
-  const [tuyaApiUSDpm, setTuyaApiUSDpm] = useState(3.15);
-  const [tuyaMsgUSDpm, setTuyaMsgUSDpm] = useState(1.24);
-  const [tuyaRelayUSDpGB, setTuyaRelayUSDpGB] = useState(0.08);
-  const [ycStorageRUBpGBm, setYcStorageRUBpGBm] = useState(1.2);
-  const [ycCDNRUBpGB, setYcCDNRUBpGB] = useState(0.6);
+  const [tuyaSDKyrUSD, setTuyaSDKyrUSD] = useLocalStorageState("app.tuyaSDKyrUSD", 5000);
+  const [tuyaApiUSDpm, setTuyaApiUSDpm] = useLocalStorageState("app.tuyaApiUSDpm", 3.15);
+  const [tuyaMsgUSDpm, setTuyaMsgUSDpm] = useLocalStorageState("app.tuyaMsgUSDpm", 1.24);
+  const [tuyaRelayUSDpGB, setTuyaRelayUSDpGB] = useLocalStorageState("app.tuyaRelayUSDpGB", 0.08);
+  const [ycStorageRUBpGBm, setYcStorageRUBpGBm] = useLocalStorageState("app.ycStorageRUBpGBm", 1.2);
+  const [ycCDNRUBpGB, setYcCDNRUBpGB] = useLocalStorageState("app.ycCDNRUBpGB", 0.6);
 
   // -------- Tariff v7 model --------
   type Tariff = {
@@ -932,6 +948,14 @@ export default function App() {
       tuyaAPIperMLNUSD?: number;
       tuyaMsgsperMLNUSD?: number;
       tuyaRelayUSDpGB?: number;
+      // multipliers
+      yandexStorageRUBpGBmMul?: number;
+      yandexCDNRUBpGBMul?: number;
+      avgGbPerDayMotionMul?: number;
+      cdnRatioMul?: number;
+      tuyaApiMul?: number;
+      tuyaMsgsMul?: number;
+      tuyaRelayMul?: number;
     };
     forecast?: {
       baseShare0?: number;
@@ -1211,7 +1235,10 @@ export default function App() {
     },
   ];
 
-  const [tariffs, setTariffs] = useState<Tariff[]>(DEFAULT_TARIFFS);
+  const [tariffs, setTariffs] = useLocalStorageState<Tariff[]>(
+    "app.tariffs",
+    DEFAULT_TARIFFS
+  );
 
   // Derived counts
   const camsTotal = useMemo(
@@ -1231,17 +1258,29 @@ export default function App() {
   }, [accounts, cloudShare, paidSplit, avgCams]);
 
   // Smart Home & Bundle organic growth (DECLARED EARLY to avoid TDZ)
-  const [smhBaseStart, setSmhBaseStart] = useState(2000);
-  const [smhGrowth, setSmhGrowth] = useState(0.02);
-  const [bundleBaseStart, setBundleBaseStart] = useState(1000);
-  const [bundleGrowth, setBundleGrowth] = useState(0.03);
+  const [smhBaseStart, setSmhBaseStart] = useLocalStorageState(
+    "app.smhBaseStart",
+    2000
+  );
+  const [smhGrowth, setSmhGrowth] = useLocalStorageState("app.smhGrowth", 0.02);
+  const [bundleBaseStart, setBundleBaseStart] = useLocalStorageState(
+    "app.bundleBaseStart",
+    1000
+  );
+  const [bundleGrowth, setBundleGrowth] = useLocalStorageState(
+    "app.bundleGrowth",
+    0.03
+  );
 
   // Competitor split across families
-  const [competitorSplit, setCompetitorSplit] = useState({
-    camera: 0.7,
-    smarthome: 0.1,
-    bundle: 0.2,
-  });
+  const [competitorSplit, setCompetitorSplit] = useLocalStorageState(
+    "app.competitorSplit",
+    {
+      camera: 0.7,
+      smarthome: 0.1,
+      bundle: 0.2,
+    }
+  );
 
   // GB/day per camera (mode-dependent)
   const gbPerDay = useMemo(
@@ -1494,19 +1533,40 @@ export default function App() {
   }, [tariffs, unitTariffRows, accounts, cloudShare, paidSplit, freeSplit]);
 
   // ---------------- PROGNOZ (months/years) ----------------
-  const [months, setMonths] = useState(24);
-  const [churn, setChurn] = useState(0.03);
-  const [salesStart, setSalesStart] = useState(2000); // камер в 1-й месяц
-  const [salesGrowthPct, setSalesGrowthPct] = useState(0.03); // рост продаж в мес
-  const [cloudNewShare, setCloudNewShare] = useState(0.2); // доля облака среди новых
+  const [months, setMonths] = useLocalStorageState("app.months", 24);
+  const [churn, setChurn] = useLocalStorageState("app.churn", 0.03);
+  const [salesStart, setSalesStart] = useLocalStorageState("app.salesStart", 2000); // камер в 1-й месяц
+  const [salesGrowthPct, setSalesGrowthPct] = useLocalStorageState(
+    "app.salesGrowthPct",
+    0.03
+  ); // рост продаж в мес
+  const [cloudNewShare, setCloudNewShare] = useLocalStorageState(
+    "app.cloudNewShare",
+    0.2
+  ); // доля облака среди новых
 
   // ---- Competitor migration ----
-  const [competitorBase, setCompetitorBase] = useState(20000); // вся база конкурентов, шт
-  const [competitorConversionPct, setCompetitorConversionPct] = useState(0.1); // доля, которую перетянем (0..1)
-  const [competitorHorizon, setCompetitorHorizon] = useState(12); // за сколько месяцев перетянем
-  const [competitorMode, setCompetitorMode] = useState("uniform"); // "uniform" | "logistic"
-  const [competitorK, setCompetitorK] = useState(0.5); // крутизна S-кривой (логистическая)
-  const [competitorMid, setCompetitorMid] = useState(null); // месяц середины S-кривой (null = центр)
+  const [competitorBase, setCompetitorBase] = useLocalStorageState(
+    "app.competitorBase",
+    20000
+  ); // вся база конкурентов, шт
+  const [competitorConversionPct, setCompetitorConversionPct] =
+    useLocalStorageState("app.competitorConversionPct", 0.1); // доля, которую перетянем (0..1)
+  const [competitorHorizon, setCompetitorHorizon] = useLocalStorageState(
+    "app.competitorHorizon",
+    12
+  ); // за сколько месяцев перетянем
+  const [competitorMode, setCompetitorMode] = useLocalStorageState<
+    "uniform" | "logistic"
+  >("app.competitorMode", "uniform"); // "uniform" | "logistic"
+  const [competitorK, setCompetitorK] = useLocalStorageState(
+    "app.competitorK",
+    0.5
+  ); // крутизна S-кривой (логистическая)
+  const [competitorMid, setCompetitorMid] = useLocalStorageState(
+    "app.competitorMid",
+    null as any
+  ); // месяц середины S-кривой (null = центр)
 
   type ForecastRow = {
     month: number;
@@ -1522,6 +1582,8 @@ export default function App() {
     profit: number;
     cumProfit: number;
   };
+  const __noop = <T,>(_v?: T) => {};
+  __noop<ForecastRow>();
 
   // breakeven moved below (after tariffForecast init)
 
@@ -1848,7 +1910,7 @@ export default function App() {
   );
 
   // ---------------- UI ----------------
-  const [tab, setTab] = useState("calc");
+  const [tab, setTab] = useLocalStorageState("app.tab", "calc");
 
   const lastTar = tariffForecast.rows[tariffForecast.rows.length - 1];
 
@@ -2675,7 +2737,11 @@ export default function App() {
                   <select
                     className={inputCls}
                     value={competitorMode}
-                    onChange={(e) => setCompetitorMode(e.target.value)}
+                    onChange={(e) =>
+                      setCompetitorMode(
+                        (e.target.value as "uniform" | "logistic")
+                      )
+                    }
                   >
                     <option value="uniform">Равномерная</option>
                     <option value="logistic">S-кривая (логистическая)</option>
