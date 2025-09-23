@@ -164,6 +164,22 @@ function TariffsEditor({ tariffs, setTariffs, defaults }: { tariffs: any[]; setT
                     <label>Tuya Relay $/ГБ <Help text="Перенаправление потоков (relay), стоимость за ГБ (USD)" /></label>
                     <input className={inputCls} type="number" step={0.01} value={t.varCost?.tuyaRelayUSDpGB ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "tuyaRelayUSDpGB", Number(e.target.value))} />
 
+                    <div className="col-span-2 font-semibold mt-2">Мультипликаторы (varCost multipliers)</div>
+                    <label>Storage × <Help text="Множитель к цене Yandex Storage (по тарифу)" /></label>
+                    <input className={inputCls} type="number" step={0.05} value={t.varCost?.yandexStorageRUBpGBmMul ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "yandexStorageRUBpGBmMul", Number(e.target.value))} />
+                    <label>CDN × <Help text="Множитель к цене Yandex CDN (по тарифу)" /></label>
+                    <input className={inputCls} type="number" step={0.05} value={t.varCost?.yandexCDNRUBpGBMul ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "yandexCDNRUBpGBMul", Number(e.target.value))} />
+                    <label>avgGb/day × <Help text="Множитель к среднему объёму/день/камера" /></label>
+                    <input className={inputCls} type="number" step={0.05} value={t.varCost?.avgGbPerDayMotionMul ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "avgGbPerDayMotionMul", Number(e.target.value))} />
+                    <label>cdnRatio × <Help text="Множитель к доле CDN для тарифа" /></label>
+                    <input className={inputCls} type="number" step={0.05} value={t.varCost?.cdnRatioMul ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "cdnRatioMul", Number(e.target.value))} />
+                    <label>Tuya API × <Help text="Множитель к стоимости API (по тарифу)" /></label>
+                    <input className={inputCls} type="number" step={0.05} value={t.varCost?.tuyaApiMul ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "tuyaApiMul", Number(e.target.value))} />
+                    <label>Tuya Msgs × <Help text="Множитель к стоимости сообщений (по тарифу)" /></label>
+                    <input className={inputCls} type="number" step={0.05} value={t.varCost?.tuyaMsgsMul ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "tuyaMsgsMul", Number(e.target.value))} />
+                    <label>Tuya Relay × <Help text="Множитель к цене relay/GB (по тарифу)" /></label>
+                    <input className={inputCls} type="number" step={0.05} value={t.varCost?.tuyaRelayMul ?? ""} onChange={e=>updateTariffNested(t.id, "varCost", "tuyaRelayMul", Number(e.target.value))} />
+
                     <div className="col-span-2 font-semibold mt-2">Прогноз/маркетинг</div>
                     <label>baseShare0 <Help text="Стартовая доля в пуле аудитории семейства (0..1)" /></label>
                     <input className={inputCls} type="number" step={0.01} value={t.forecast?.baseShare0 ?? ""} onChange={e=>updateTariffNested(t.id, "forecast", "baseShare0", Number(e.target.value))} />
@@ -309,10 +325,10 @@ export default function App() {
   // Распределение текущей базы: платящие vs бесплатные, и сплит по семействам
   const [paidSplit, setPaidSplit] = useState({ camera: 0.6, smarthome: 0.2, bundle: 0.2 });
   const [freeSplit, setFreeSplit] = useState({ camera: 0.7, smarthome: 0.3 });
-  const [cdnRatio, setCdnRatio] = useState(0.3);
+  const [cdnRatio, setCdnRatio] = useState(0.25);
   const [liveHours, setLiveHours] = useState(1);
-  const [relayShare, setRelayShare] = useState(0.2);
-  const [apiPerDay, setApiPerDay] = useState(100);
+  const [relayShare, setRelayShare] = useState(0.15);
+  const [apiPerDay, setApiPerDay] = useState(70);
   const [monthDays, setMonthDays] = useState(30);
   const [backendFixed, setBackendFixed] = useState(15000);
   const [opsFixed, setOpsFixed] = useState(1000);
@@ -389,7 +405,7 @@ export default function App() {
     {
       id: "cam_addon_49",
       family: "camera",
-      name: "CAM‑ADDON‑49",
+      name: "CAM‑ADDON",
       description: "Уведомления с превью + базовый умный дом (Алиса).",
       features: [
         "Пуш‑уведомления с превью (TTL 48 ч)",
@@ -399,7 +415,7 @@ export default function App() {
         "До 3 пользователей",
         "Fair‑Use: ≤60 пушей/сутки, relay ≤15 мин/сутки",
       ],
-      price: 49,
+      price: 59,
       includedCams: 1,
       archiveDays: 0,
       gbCapPerCam: 0,
@@ -409,7 +425,7 @@ export default function App() {
     {
       id: "cam_arch_7",
       family: "camera",
-      name: "CAM‑ARCH‑7",
+      name: "CAM‑ARCH‑S",
       description: "Архив 7 дней. Лимит 5 ГБ/кам. 1 камера.",
       features: [
         "Запись по событиям (Motion)",
@@ -420,17 +436,17 @@ export default function App() {
         "Приоритетный доступ (CDN/relay Fair‑Use)",
         "Общий доступ до 5 пользователей",
       ],
-      price: 149,
+      price: 169,
       includedCams: 1,
       archiveDays: 7,
       gbCapPerCam: 5,
-      overageRUBperGB: 7,
+      overageRUBperGB: 10,
       forecast: { baseShare0: 0.1, adoptionNew: 0.35, churn: 0.025, upgradeTo: "cam_arch_30", upgradeRate: 0.015, downgradeTo: "cam_addon_49", downgradeRate: 0.005 },
     },
     {
       id: "cam_arch_30",
       family: "camera",
-      name: "CAM‑ARCH‑30",
+      name: "CAM‑ARCH‑M",
       description: "Архив 30 дней. Лимит 25 ГБ/кам. 1 камера.",
       features: [
         "Запись по событиям (Motion)",
@@ -438,17 +454,17 @@ export default function App() {
         "Лимит 25 ГБ/кам (перерасход 7 ₽/ГБ)",
         "Приоритетный доступ (CDN/relay Fair‑Use)",
       ],
-      price: 299,
+      price: 349,
       includedCams: 1,
       archiveDays: 30,
       gbCapPerCam: 25,
-      overageRUBperGB: 7,
+      overageRUBperGB: 10,
       forecast: { baseShare0: 0.04, adoptionNew: 0.25, churn: 0.02, upgradeTo: "cam_arch_90", upgradeRate: 0.01, downgradeTo: "cam_arch_7", downgradeRate: 0.01 },
     },
     {
       id: "cam_arch_90",
       family: "camera",
-      name: "CAM‑ARCH‑90",
+      name: "CAM‑ARCH‑L",
       description: "Архив 90 дней. Лимит 75 ГБ/кам. 2 камеры.",
       features: [
         "Запись по событиям (Motion)",
@@ -458,11 +474,11 @@ export default function App() {
         "Web‑клиент",
         "Приоритетная поддержка",
       ],
-      price: 699,
-      includedCams: 2,
+      price: 799,
+      includedCams: 1,
       archiveDays: 90,
       gbCapPerCam: 75,
-      overageRUBperGB: 7,
+      overageRUBperGB: 10,
       forecast: { baseShare0: 0.01, adoptionNew: 0.15, churn: 0.015, downgradeTo: "cam_arch_30", downgradeRate: 0.01 },
     },
 
@@ -500,14 +516,14 @@ export default function App() {
     {
       id: "bundle_89",
       family: "bundle",
-      name: "BUNDLE‑89",
+      name: "BUNDLE‑BASE",
       description: "Уведомления по камерам + умный дом (базовый).",
       features: [
         "Всё из CAM‑ADDON‑49 + SMH‑49",
         "Единый доступ семьи и общие плитки",
         "Fair‑Use: пуши/relay как в CAM‑ADDON‑49",
       ],
-      price: 89,
+      price: 109,
       includedCams: 1,
       archiveDays: 0,
       forecast: { baseShare0: 0.6, adoptionNew: 0.4, churn: 0.03, upgradeTo: "bundle_arch_7", upgradeRate: 0.02 },
@@ -515,51 +531,51 @@ export default function App() {
     {
       id: "bundle_arch_7",
       family: "bundle",
-      name: "BUNDLE‑ARCH‑7",
+      name: "BUNDLE‑ARCH‑S",
       description: "Bundle + архив 7 дней (лимиты как у камер).",
       features: [
         "Архив 7 дней",
         "Лимит 5 ГБ/кам (перерасход 7 ₽/ГБ)",
         "Объединённые сценарии «камера→действие»",
       ],
-      price: 199,
+      price: 209,
       includedCams: 1,
       archiveDays: 7,
       gbCapPerCam: 5,
-      overageRUBperGB: 7,
+      overageRUBperGB: 10,
       forecast: { baseShare0: 0.25, adoptionNew: 0.35, churn: 0.025, upgradeTo: "bundle_arch_30", upgradeRate: 0.015, downgradeTo: "bundle_89", downgradeRate: 0.01 },
     },
     {
       id: "bundle_arch_30",
       family: "bundle",
-      name: "BUNDLE‑ARCH‑30",
+      name: "BUNDLE‑ARCH‑M",
       description: "Bundle + архив 30 дней (25 ГБ/кам).",
       features: [
         "Архив 30 дней",
         "Лимит 25 ГБ/кам (перерасход 7 ₽/ГБ)",
       ],
-      price: 349,
+      price: 389,
       includedCams: 1,
       archiveDays: 30,
       gbCapPerCam: 25,
-      overageRUBperGB: 7,
+      overageRUBperGB: 10,
       forecast: { baseShare0: 0.1, adoptionNew: 0.2, churn: 0.02, upgradeTo: "bundle_arch_90", upgradeRate: 0.01, downgradeTo: "bundle_arch_7", downgradeRate: 0.01 },
     },
     {
       id: "bundle_arch_90",
       family: "bundle",
-      name: "BUNDLE‑ARCH‑90",
+      name: "BUNDLE‑ARCH‑L",
       description: "Bundle + архив 90 дней (75 ГБ/кам). 2 камеры.",
       features: [
         "Архив 90 дней",
         "Лимит 75 ГБ/кам (перерасход 7 ₽/ГБ)",
         "2 камеры включено",
       ],
-      price: 799,
-      includedCams: 2,
+      price: 839,
+      includedCams: 1,
       archiveDays: 90,
       gbCapPerCam: 75,
-      overageRUBperGB: 7,
+      overageRUBperGB: 10,
       forecast: { baseShare0: 0.05, adoptionNew: 0.05, churn: 0.015, downgradeTo: "bundle_arch_30", downgradeRate: 0.01 },
     },
   ];
