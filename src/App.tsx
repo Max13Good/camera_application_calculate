@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   LineChart as RLineChart,
   Line,
@@ -22,6 +22,8 @@ import Help from "./components/Help";
 import TariffsEditor from "./components/TariffsEditor";
 import BaseMixEditor from "./components/BaseMixEditor";
 import { useLocalStorageState } from "./hooks/useLocalStorage";
+import { computeUnitTariffRows, computeTariffPortfolio } from "./lib/economics";
+import { useTariffForecast } from "./hooks/useTariffForecast";
 
 // ------------------------------------------------------------
 // Mini App v3 — Cloud Pricing & Profit Calculator (RU)
@@ -33,808 +35,13 @@ import { useLocalStorageState } from "./hooks/useLocalStorage";
 // - TypeScript-фиксы (нет .at; типизированы Tooltip и агрегаторы.)
 // ------------------------------------------------------------
 
-export function Section_OLD({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="bg-white shadow-sm rounded-2xl p-5 border border-gray-100 overflow-hidden">
-      <h2 className="text-lg font-semibold mb-3">{title}</h2>
-      {children}
-    </div>
-  );
-}
+// legacy inline components removed
 
-export function Num_OLD({ value, digits = 0 }: { value: number; digits?: number }) {
-  const fmt = useMemo(
-    () =>
-      new Intl.NumberFormat("ru-RU", {
-        maximumFractionDigits: digits,
-        minimumFractionDigits: digits,
-      }),
-    [digits]
-  );
-  return (
-    <span className="tabular-nums whitespace-nowrap">
-      {fmt.format(isFinite(value) ? value : 0)}
-    </span>
-  );
-}
+// [removed] TariffsEditor_OLD
+// end removed
 
-export function Help_OLD({ text }: { text: string }) {
-  return (
-    <span
-      className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-[10px] font-semibold cursor-help"
-      title={text}
-    >
-      ?
-    </span>
-  );
-}
-
-export function TariffsEditor_OLD({
-  tariffs,
-  setTariffs,
-  defaults,
-}: {
-  tariffs: any[];
-  setTariffs: (t: any[]) => void;
-  defaults: any[];
-}) {
-  const [open, setOpen] = useState<Record<string, boolean>>({});
-  const [showExport, setShowExport] = useState(false);
-  const [showImport, setShowImport] = useState(false);
-  const [importText, setImportText] = useState("");
-
-  const families: Array<{
-    key: "camera" | "smarthome" | "bundle";
-    title: string;
-  }> = [
-    { key: "camera", title: "Камеры" },
-    { key: "smarthome", title: "Умный дом" },
-    { key: "bundle", title: "Комбо" },
-  ];
-
-  const updateTariff = (id: string, patch: any) => {
-    setTariffs(tariffs.map((t) => (t.id === id ? { ...t, ...patch } : t)));
-  };
-  const updateTariffNested = (
-    id: string,
-    path: "varCost" | "forecast",
-    key: string,
-    value: any
-  ) => {
-    setTariffs(
-      tariffs.map((t) =>
-        t.id === id ? { ...t, [path]: { ...(t[path] || {}), [key]: value } } : t
-      )
-    );
-  };
-
-  return (
-    <div>
-      <div className="flex flex-wrap items-center gap-2 mb-3 text-sm">
-        <button
-          className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200"
-          onClick={() => setTariffs(JSON.parse(JSON.stringify(defaults)))}
-        >
-          Сбросить на дефолт
-        </button>
-        <button
-          className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200"
-          onClick={() => {
-            setShowExport(!showExport);
-            setShowImport(false);
-          }}
-        >
-          {showExport ? "Скрыть экспорт" : "Экспорт тарифов (JSON)"}
-        </button>
-        <button
-          className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200"
-          onClick={() => {
-            setShowImport(!showImport);
-            setShowExport(false);
-          }}
-        >
-          {showImport ? "Скрыть импорт" : "Импорт тарифов (JSON)"}
-        </button>
-      </div>
-
-      {showExport && (
-        <div className="mb-4">
-          <textarea
-            className={`${inputCls} w-full h-40 font-mono`}
-            readOnly
-            value={JSON.stringify(tariffs, null, 2)}
-          />
-        </div>
-      )}
-      {showImport && (
-        <div className="mb-4">
-          <textarea
-            className={`${inputCls} w-full h-40 font-mono`}
-            placeholder="Вставьте JSON тарифов"
-            value={importText}
-            onChange={(e) => setImportText(e.target.value)}
-          />
-          <div className="mt-2">
-            <button
-              className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white"
-              onClick={() => {
-                try {
-                  const parsed = JSON.parse(importText);
-                  if (Array.isArray(parsed)) setTariffs(parsed);
-                } catch (e) {
-                  /* ignore */
-                }
-              }}
-            >
-              Импортировать
-            </button>
-          </div>
-        </div>
-      )}
-
-      {families.map((fam) => (
-        <div key={fam.key} className="mb-4">
-          <div className="text-sm font-semibold mb-2">{fam.title}</div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {tariffs
-              .filter((t) => t.family === fam.key)
-              .map((t) => (
-                <div
-                  key={t.id}
-                  className="bg-gray-50 rounded-xl p-4 border border-gray-100"
-                >
-                  <div className="flex items-start gap-2">
-                    <div className="font-semibold flex-1">{t.name}</div>
-                    <button
-                      className="text-indigo-600 text-sm"
-                      onClick={() => setOpen({ ...open, [t.id]: !open[t.id] })}
-                    >
-                      {open[t.id] ? "Свернуть" : "Изменить"}
-                    </button>
-                  </div>
-                  <div className="text-xs text-gray-600 mb-2">
-                    {t.description}
-                  </div>
-                  <div className="text-sm font-medium mb-2">
-                    Цена: <Num value={t.price || 0} /> ₽/мес
-                  </div>
-                  <ul className="list-disc pl-5 space-y-1 text-sm mb-3">
-                    {(t.features || []).map((f: string, i: number) => (
-                      <li key={i}>{f}</li>
-                    ))}
-                  </ul>
-
-                  {open[t.id] && (
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-                      <label>
-                        Цена (₽/мес){" "}
-                        <Help text="ARPU тарифа за месяц. 0 для Free" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        value={t.price || 0}
-                        onChange={(e) =>
-                          updateTariff(t.id, { price: Number(e.target.value) })
-                        }
-                      />
-
-                      <label>
-                        Включено камер{" "}
-                        <Help text="Сколько камер входит в тариф без доплаты" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        value={t.includedCams ?? 1}
-                        onChange={(e) =>
-                          updateTariff(t.id, {
-                            includedCams: Number(e.target.value),
-                          })
-                        }
-                      />
-
-                      <label>
-                        Архив (дней){" "}
-                        <Help text="Глубина архива видеозаписей. 0 — без архива" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        value={t.archiveDays ?? 0}
-                        onChange={(e) =>
-                          updateTariff(t.id, {
-                            archiveDays: Number(e.target.value),
-                          })
-                        }
-                      />
-
-                      <label>
-                        Лимит ГБ/кам{" "}
-                        <Help text="Жёсткий cap объёма хранения на камеру за период" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        value={t.gbCapPerCam ?? 0}
-                        onChange={(e) =>
-                          updateTariff(t.id, {
-                            gbCapPerCam: Number(e.target.value),
-                          })
-                        }
-                      />
-
-                      <label>
-                        Overage ₽/ГБ{" "}
-                        <Help text="Стоимость перерасхода (факт − лимит), ₽/ГБ" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        value={t.overageRUBperGB ?? 0}
-                        onChange={(e) =>
-                          updateTariff(t.id, {
-                            overageRUBperGB: Number(e.target.value),
-                          })
-                        }
-                      />
-
-                      <div className="col-span-2 font-semibold mt-2">
-                        Переменная себестоимость (varCost)
-                      </div>
-                      <label>
-                        Yandex Storage ₽/ГБ·мес{" "}
-                        <Help text="Стоимость хранения за ГБ в месяц" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.01}
-                        value={t.varCost?.yandexStorageRUBpGBm ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "varCost",
-                            "yandexStorageRUBpGBm",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        Yandex CDN ₽/ГБ{" "}
-                        <Help text="Стоимость CDN за ГБ скачиваний" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.01}
-                        value={t.varCost?.yandexCDNRUBpGB ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "varCost",
-                            "yandexCDNRUBpGB",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        avgGbPerDayMotion{" "}
-                        <Help text="Средний объём/день/камера в Motion‑режиме" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.1}
-                        value={t.varCost?.avgGbPerDayMotion ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "varCost",
-                            "avgGbPerDayMotion",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        cdnRatio <Help text="Доля скачиваний из CDN (0..1)" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.01}
-                        value={t.varCost?.cdnRatio ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "varCost",
-                            "cdnRatio",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        Tuya API $/1млн{" "}
-                        <Help text="Стоимость API на 1 млн вызовов (USD)" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.01}
-                        value={t.varCost?.tuyaAPIperMLNUSD ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "varCost",
-                            "tuyaAPIperMLNUSD",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        Tuya Msgs $/1млн{" "}
-                        <Help text="Стоимость сообщений/событий на 1 млн (USD)" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.01}
-                        value={t.varCost?.tuyaMsgsperMLNUSD ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "varCost",
-                            "tuyaMsgsperMLNUSD",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        Tuya Relay $/ГБ{" "}
-                        <Help text="Перенаправление потоков (relay), стоимость за ГБ (USD)" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.01}
-                        value={t.varCost?.tuyaRelayUSDpGB ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "varCost",
-                            "tuyaRelayUSDpGB",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-
-                      <div className="col-span-2 font-semibold mt-2">
-                        Мультипликаторы (varCost multipliers)
-                      </div>
-                      <label>
-                        Storage ×{" "}
-                        <Help text="Множитель к цене Yandex Storage (по тарифу)" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.05}
-                        value={t.varCost?.yandexStorageRUBpGBmMul ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "varCost",
-                            "yandexStorageRUBpGBmMul",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        CDN ×{" "}
-                        <Help text="Множитель к цене Yandex CDN (по тарифу)" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.05}
-                        value={t.varCost?.yandexCDNRUBpGBMul ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "varCost",
-                            "yandexCDNRUBpGBMul",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        avgGb/day ×{" "}
-                        <Help text="Множитель к среднему объёму/день/камера" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.05}
-                        value={t.varCost?.avgGbPerDayMotionMul ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "varCost",
-                            "avgGbPerDayMotionMul",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        cdnRatio ×{" "}
-                        <Help text="Множитель к доле CDN для тарифа" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.05}
-                        value={t.varCost?.cdnRatioMul ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "varCost",
-                            "cdnRatioMul",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        Tuya API ×{" "}
-                        <Help text="Множитель к стоимости API (по тарифу)" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.05}
-                        value={t.varCost?.tuyaApiMul ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "varCost",
-                            "tuyaApiMul",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        Tuya Msgs ×{" "}
-                        <Help text="Множитель к стоимости сообщений (по тарифу)" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.05}
-                        value={t.varCost?.tuyaMsgsMul ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "varCost",
-                            "tuyaMsgsMul",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        Tuya Relay ×{" "}
-                        <Help text="Множитель к цене relay/GB (по тарифу)" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.05}
-                        value={t.varCost?.tuyaRelayMul ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "varCost",
-                            "tuyaRelayMul",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-
-                      <div className="col-span-2 font-semibold mt-2">
-                        Прогноз/маркетинг
-                      </div>
-                      <label>
-                        baseShare0{" "}
-                        <Help text="Стартовая доля в пуле аудитории семейства (0..1)" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.01}
-                        value={t.forecast?.baseShare0 ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "forecast",
-                            "baseShare0",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        adoptionNew{" "}
-                        <Help text="Доля новых, кто выбирает этот тариф (0..1)" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.01}
-                        value={t.forecast?.adoptionNew ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "forecast",
-                            "adoptionNew",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        churn <Help text="Месячный отток этого тарифа (0..1)" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.001}
-                        value={t.forecast?.churn ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "forecast",
-                            "churn",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        upgradeTo (id){" "}
-                        <Help text="Целевой тариф для апгрейда" />
-                      </label>
-                      <select
-                        className={inputCls}
-                        value={t.forecast?.upgradeTo ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "forecast",
-                            "upgradeTo",
-                            e.target.value || null
-                          )
-                        }
-                      >
-                        <option value="">—</option>
-                        {tariffs.map((x) => (
-                          <option key={x.id} value={x.id}>
-                            {x.id}
-                          </option>
-                        ))}
-                      </select>
-                      <label>
-                        upgradeRate{" "}
-                        <Help text="Доля, апгрейдящаяся в месяц (0..1)" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.001}
-                        value={t.forecast?.upgradeRate ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "forecast",
-                            "upgradeRate",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                      <label>
-                        downgradeTo (id){" "}
-                        <Help text="Целевой тариф для даунгрейда" />
-                      </label>
-                      <select
-                        className={inputCls}
-                        value={t.forecast?.downgradeTo ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "forecast",
-                            "downgradeTo",
-                            e.target.value || null
-                          )
-                        }
-                      >
-                        <option value="">—</option>
-                        {tariffs.map((x) => (
-                          <option key={x.id} value={x.id}>
-                            {x.id}
-                          </option>
-                        ))}
-                      </select>
-                      <label>
-                        downgradeRate{" "}
-                        <Help text="Доля, даунгрейдящаяся в месяц (0..1)" />
-                      </label>
-                      <input
-                        className={inputCls}
-                        type="number"
-                        step={0.001}
-                        value={t.forecast?.downgradeRate ?? ""}
-                        onChange={(e) =>
-                          updateTariffNested(
-                            t.id,
-                            "forecast",
-                            "downgradeRate",
-                            Number(e.target.value)
-                          )
-                        }
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function BaseMixEditor_OLD({
-  tariffs,
-  setTariffs,
-}: {
-  tariffs: any[];
-  setTariffs: (t: any[]) => void;
-}) {
-  const families: Array<{
-    key: "camera" | "smarthome" | "bundle";
-    title: string;
-  }> = [
-    { key: "camera", title: "Камеры" },
-    { key: "smarthome", title: "Умный дом" },
-    { key: "bundle", title: "Комбо" },
-  ];
-
-  const updateShare = (id: string, nextVal: number) => {
-    const v = isFinite(nextVal) ? Math.max(0, nextVal) : 0;
-    setTariffs(
-      tariffs.map((t: any) =>
-        t.id === id
-          ? { ...t, forecast: { ...(t.forecast || {}), baseShare0: v } }
-          : t
-      )
-    );
-  };
-
-  const normalizeFamily = (fam: "camera" | "smarthome" | "bundle") => {
-    const list = tariffs.filter((t: any) => t.family === fam);
-    const sum = list.reduce(
-      (s: number, t: any) => s + (t.forecast?.baseShare0 || 0),
-      0
-    );
-    if (sum <= 0) return;
-    setTariffs(
-      tariffs.map((t: any) =>
-        t.family === fam
-          ? {
-              ...t,
-              forecast: {
-                ...(t.forecast || {}),
-                baseShare0: (t.forecast?.baseShare0 || 0) / sum,
-              },
-            }
-          : t
-      )
-    );
-  };
-
-  const evenFamily = (fam: "camera" | "smarthome" | "bundle") => {
-    const list = tariffs.filter((t: any) => t.family === fam);
-    const w = list.length ? 1 / list.length : 0;
-    setTariffs(
-      tariffs.map((t: any) =>
-        t.family === fam
-          ? { ...t, forecast: { ...(t.forecast || {}), baseShare0: w } }
-          : t
-      )
-    );
-  };
-
-  return (
-    <div className="space-y-4">
-      {families.map((f) => {
-        const list = tariffs.filter((t: any) => t.family === f.key);
-        const sum = list.reduce(
-          (s: number, t: any) => s + (t.forecast?.baseShare0 || 0),
-          0
-        );
-        return (
-          <div
-            key={f.key}
-            className="bg-gray-50 rounded-xl p-4 border border-gray-100"
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <div className="font-semibold">{f.title}</div>
-              <div className="text-xs text-gray-600">
-                Сумма долей:{" "}
-                <span
-                  className={`font-medium ${
-                    Math.abs(sum - 1) < 1e-6
-                      ? "text-green-600"
-                      : "text-amber-600"
-                  }`}
-                >
-                  {new Intl.NumberFormat("ru-RU", {
-                    maximumFractionDigits: 2,
-                  }).format(sum)}
-                </span>
-              </div>
-              <div className="ml-auto flex gap-2 text-sm">
-                <button
-                  className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200"
-                  onClick={() => normalizeFamily(f.key)}
-                >
-                  Нормализовать
-                </button>
-                <button
-                  className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200"
-                  onClick={() => evenFamily(f.key)}
-                >
-                  Равномерно
-                </button>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-[700px] table-auto text-sm">
-                <thead>
-                  <tr className="text-left">
-                    <th className={thCls}>Тариф</th>
-                    <th className={thCls}>
-                      Доля в базе (0..1){" "}
-                      <Help text="Распределение текущей базы внутри семейства. Сумма по семейству = 1." />
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map((t: any) => (
-                    <tr key={t.id} className="border-t">
-                      <td className={`${tdTextCls} py-1`}>{t.name}</td>
-                      <td className={tdTextCls}>
-                        <input
-                          className={`${inputCls} w-32`}
-                          type="number"
-                          step={0.01}
-                          value={t.forecast?.baseShare0 ?? 0}
-                          onChange={(e) =>
-                            updateShare(t.id, Number(e.target.value))
-                          }
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+// [removed] BaseMixEditor_OLD
+// end removed
 
 // ---- Utils: clamp, safeDiv ----
 export const clamp = (v: number, min: number, max: number) =>
@@ -842,13 +49,13 @@ export const clamp = (v: number, min: number, max: number) =>
 export const safeDiv = (a: number, b: number) => (b ? a / b : 0);
 
 // ---- Weights: uniform & logistic ----
-function uniformWeights(months: number): number[] {
+/* function uniformWeights(months: number): number[] {
   if (months <= 0) return [];
   const w = 1 / months;
   return Array.from({ length: months }, () => w);
-}
+}*/
 
-function logisticWeights(
+/* function logisticWeights(
   months: number,
   k: number = 0.5,
   x0: number | null = null
@@ -862,9 +69,9 @@ function logisticWeights(
     diffs.push(Math.max(0, cdf[i] - cdf[i - 1]));
   const sum = diffs.reduce((s, v) => s + v, 0) || 1;
   return diffs.map((v) => v / sum);
-}
+}*/
 
-function makeCompetitorSchedule({
+/* function makeCompetitorSchedule({
   mode = "uniform",
   total,
   months,
@@ -881,7 +88,7 @@ function makeCompetitorSchedule({
       ? logisticWeights(m, params.k ?? 0.5, params.x0 ?? null)
       : uniformWeights(m);
   return W.map((w) => w * (total || 0)); // абсолютные значения/мес
-}
+}*/
 
 const inputCls =
   "w-full h-9 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500";
@@ -1300,237 +507,75 @@ export default function App() {
   );
 
   // Unit economics per tariff (per active tariff account)
-  type UnitTariffRow = {
-    id: string;
-    name: string;
-    family: Tariff["family"];
-    revenueAcc: number;
-    overageAcc: number;
-    yandexCostAcc: number;
-    tuyaCostAcc: number;
-    costAcc: number;
-    profitAcc: number;
-    marginAcc: number;
-  };
-
-  const unitTariffRows: UnitTariffRow[] = useMemo(() => {
-    const rows: UnitTariffRow[] = [];
-    const totalPaidAcc = Math.max(0, Math.round(accounts * cloudShare));
-    const totalFreeAcc = Math.max(0, Math.round(accounts - totalPaidAcc));
-    const accEquiv = Math.max(
-      1,
-      Math.round(totalPaidAcc + totalFreeAcc * freeLoadShare)
-    );
-    const camsPaidTotal = Math.round(totalPaidAcc * avgCams);
-    const camsFreeTotal = Math.round(totalFreeAcc * avgCams);
-    const camsEquiv = camsPaidTotal + camsFreeTotal * freeLoadShare;
-    const backendOpsPerAcc =
-      (backendFixed + opsFixed) / Math.max(cloudAccounts, 1);
-
-    // Распределяем Tuya SDK и переменные издержки только между платными аккаунтами
-    const sdkPerAccEquiv = tuyaSDKmoRUB / accEquiv;
-
-    const apiTotal = camsEquiv * apiPerDay * monthDays;
-    const apiRubTotal =
-      Math.max(0, (apiTotal - 1_000_000) / 1_000_000) * tuyaApiUSDpm * fx;
-    const baseApiPerAcc = apiRubTotal / accEquiv;
-
-    const msgsTotal = camsEquiv * 10 * monthDays;
-    const msgsRubTotal = (msgsTotal / 1_000_000) * tuyaMsgUSDpm * fx;
-    const baseMsgsPerAcc = msgsRubTotal / accEquiv;
-
-    const relayGbTotal = camsEquiv * camHoursPerDayForRelay * 0.72 * monthDays;
-    const relayRubTotal = relayGbTotal * tuyaRelayUSDpGB * fx;
-    const baseRelayPerAcc = relayRubTotal / accEquiv;
-
-    for (const t of tariffs) {
-      const vc = (t.varCost || {}) as any;
-
-      // Effective parameters: absolute overrides with optional multipliers fallback
-      const storagePrice =
-        (vc.yandexStorageRUBpGBm ?? ycStorageRUBpGBm) *
-        (vc.yandexStorageRUBpGBmMul ?? 1);
-      const cdnPrice =
-        (vc.yandexCDNRUBpGB ?? ycCDNRUBpGB) * (vc.yandexCDNRUBpGBMul ?? 1);
-      const cdnRatioEff = (vc.cdnRatio ?? cdnRatio) * (vc.cdnRatioMul ?? 1);
-
-      // GB/day per camera effective
-      const gbPerDayBase = fullMode
-        ? ((bitrateMbps / 8) * 3600 * fullHours) / 1024
-        : gbPerDay;
-      const gbPerDayEff =
-        (vc.avgGbPerDayMotion ?? gbPerDayBase) * (vc.avgGbPerDayMotionMul ?? 1);
-
-      const archiveDays = t.archiveDays || 0;
-      const camsPerAcc = t.includedCams || avgCams;
-      const capPerCam = t.gbCapPerCam || 0;
-      const overagePrice = t.overageRUBperGB || 0;
-      const price = t.price || 0;
-
-      // volume calc
-      const factPerCamGB = archiveDays > 0 ? gbPerDayEff * archiveDays : 0;
-      const billPerCamGB =
-        capPerCam > 0 ? Math.min(factPerCamGB, capPerCam) : factPerCamGB;
-      const storageGBacc = billPerCamGB * camsPerAcc;
-      const cdnGBacc = storageGBacc * cdnRatioEff;
-
-      const backendAlloc =
-        t.family === "camera" && (t.price || 0) > 0 ? backendOpsPerAcc : 0;
-      const yandexCostAcc =
-        storageGBacc * storagePrice + cdnGBacc * cdnPrice + backendAlloc;
-
-      const overGBacc =
-        Math.max(0, factPerCamGB - (capPerCam || 0)) * camsPerAcc;
-      const overageAcc = overGBacc * overagePrice;
-
-      // Tuya per-account effective using price overrides proportionally to base
-      const apiPriceUSDpm = vc.tuyaAPIperMLNUSD ?? tuyaApiUSDpm;
-      const msgsPriceUSDpm = vc.tuyaMsgsperMLNUSD ?? tuyaMsgUSDpm;
-      const relayPriceUSDpGB = vc.tuyaRelayUSDpGB ?? tuyaRelayUSDpGB;
-
-      const wTariff = (t.price || 0) > 0 ? 1 : freeLoadShare;
-      const apiPerAcc =
-        baseApiPerAcc *
-        (apiPriceUSDpm / Math.max(tuyaApiUSDpm, 1e-9)) *
-        (vc.tuyaApiMul ?? 1) *
-        wTariff;
-      const msgsPerAcc =
-        baseMsgsPerAcc *
-        (msgsPriceUSDpm / Math.max(tuyaMsgUSDpm, 1e-9)) *
-        (vc.tuyaMsgsMul ?? 1) *
-        wTariff;
-      const relayPerAcc =
-        baseRelayPerAcc *
-        (relayPriceUSDpGB / Math.max(tuyaRelayUSDpGB, 1e-9)) *
-        (vc.tuyaRelayMul ?? 1) *
-        wTariff;
-      const sdkPart = sdkPerAccEquiv * wTariff;
-      const tuyaCostAcc = sdkPart + apiPerAcc + msgsPerAcc + relayPerAcc;
-
-      const revenueAcc = price + overageAcc;
-      const costAcc = yandexCostAcc + tuyaCostAcc;
-      const profitAcc = revenueAcc - costAcc;
-      const marginAcc = revenueAcc > 0 ? (profitAcc / revenueAcc) * 100 : 0;
-
-      rows.push({
-        id: t.id,
-        name: t.name,
-        family: t.family,
-        revenueAcc,
-        overageAcc,
-        yandexCostAcc,
-        tuyaCostAcc,
-        costAcc,
-        profitAcc,
-        marginAcc,
-      });
-    }
-    return rows;
-  }, [
-    tariffs,
-    // globals
-    avgCams,
-    gbPerDay,
-    fullMode,
-    bitrateMbps,
-    fullHours,
-    cdnRatio,
-    ycStorageRUBpGBm,
-    ycCDNRUBpGB,
-    backendFixed,
-    opsFixed,
-    tuyaSDKmoRUB,
-    accounts,
-    camsTotal,
-    apiPerDay,
-    monthDays,
-    tuyaApiUSDpm,
-    fx,
-    tuyaMsgUSDpm,
-    camHoursPerDayForRelay,
-    tuyaRelayUSDpGB,
-    cloudAccounts,
-  ]);
+  const unitTariffRows = useMemo(
+    () =>
+      computeUnitTariffRows({
+        tariffs,
+        avgCams,
+        gbPerDay,
+        fullMode,
+        bitrateMbps,
+        fullHours,
+        cdnRatio,
+        ycStorageRUBpGBm,
+        ycCDNRUBpGB,
+        backendFixed,
+        opsFixed,
+        tuyaSDKmoRUB,
+        accounts,
+        camsTotal,
+        apiPerDay,
+        monthDays,
+        tuyaApiUSDpm,
+        fx,
+        tuyaMsgUSDpm,
+        camHoursPerDayForRelay,
+        tuyaRelayUSDpGB,
+        cloudAccounts,
+        cloudShare,
+        freeLoadShare,
+      }),
+    [
+      tariffs,
+      avgCams,
+      gbPerDay,
+      fullMode,
+      bitrateMbps,
+      fullHours,
+      cdnRatio,
+      ycStorageRUBpGBm,
+      ycCDNRUBpGB,
+      backendFixed,
+      opsFixed,
+      tuyaSDKmoRUB,
+      accounts,
+      camsTotal,
+      apiPerDay,
+      monthDays,
+      tuyaApiUSDpm,
+      fx,
+      tuyaMsgUSDpm,
+      camHoursPerDayForRelay,
+      tuyaRelayUSDpGB,
+      cloudAccounts,
+      cloudShare,
+      freeLoadShare,
+    ]
+  );
 
   // Portfolio now: split base into paid vs free, then across families and tariffs
-  const tariffPortfolio = useMemo(() => {
-    const totalPaid = Math.round(accounts * cloudShare);
-    const totalFree = Math.max(0, Math.round(accounts - totalPaid));
-
-    const paidPools: Record<Tariff["family"], number> = {
-      camera: Math.round(totalPaid * (paidSplit.camera || 0)),
-      smarthome: Math.round(totalPaid * (paidSplit.smarthome || 0)),
-      bundle: Math.round(totalPaid * (paidSplit.bundle || 0)),
-    };
-    const freePools: Partial<Record<Tariff["family"], number>> = {
-      camera: Math.round(totalFree * (freeSplit.camera || 0)),
-      smarthome: Math.round(totalFree * (freeSplit.smarthome || 0)),
-    };
-
-    const alloc: Record<string, number> = {};
-
-    function allocByShare(list: Tariff[], pool: number) {
-      if (!list.length || !pool) return;
-      const sum = list.reduce((s, t) => s + (t.forecast?.baseShare0 || 0), 0);
-      if (sum > 0) {
-        for (const t of list)
-          alloc[t.id] =
-            (alloc[t.id] || 0) +
-            Math.round(pool * ((t.forecast?.baseShare0 || 0) / sum));
-      } else {
-        const w = 1 / list.length;
-        for (const t of list)
-          alloc[t.id] = (alloc[t.id] || 0) + Math.round(pool * w);
-      }
-    }
-
-    (["camera", "smarthome", "bundle"] as Array<Tariff["family"]>).forEach(
-      (fam) => {
-        const ts = tariffs.filter((t) => t.family === fam);
-        const paidTs = ts.filter((t) => (t.price || 0) > 0);
-        const freeTs = ts.filter((t) => (t.price || 0) === 0);
-
-        // Paid pools always distributed across paid tariffs
-        allocByShare(paidTs, paidPools[fam] || 0);
-        // Free pools (only for camera/smarthome) across free tariffs
-        if (fam !== "bundle")
-          allocByShare(freeTs, (freePools as any)[fam] || 0);
-      }
-    );
-
-    const rows = tariffs.map((t) => {
-      const accs = alloc[t.id] || 0;
-      const u = unitTariffRows.find((r) => r.id === t.id);
-      const revenue = (u ? u.revenueAcc : 0) * accs;
-      const yCost = (u ? u.yandexCostAcc : 0) * accs;
-      const tCost = (u ? u.tuyaCostAcc : 0) * accs;
-      const cost = (u ? u.costAcc : 0) * accs;
-      const profit = (u ? u.profitAcc : 0) * accs;
-      return {
-        id: t.id,
-        name: t.name,
-        family: t.family,
-        accs,
-        revenue,
-        yCost,
-        tCost,
-        cost,
-        profit,
-      };
-    });
-    const totals = rows.reduce(
-      (s, r) => ({
-        accs: s.accs + r.accs,
-        revenue: s.revenue + r.revenue,
-        yCost: s.yCost + r.yCost,
-        tCost: s.tCost + r.tCost,
-        cost: s.cost + r.cost,
-        profit: s.profit + r.profit,
+  const tariffPortfolio = useMemo(
+    () =>
+      computeTariffPortfolio({
+        tariffs,
+        unitTariffRows,
+        accounts,
+        cloudShare,
+        paidSplit,
+        freeSplit,
       }),
-      { accs: 0, revenue: 0, yCost: 0, tCost: 0, cost: 0, profit: 0 }
-    );
-    return { rows, totals };
-  }, [tariffs, unitTariffRows, accounts, cloudShare, paidSplit, freeSplit]);
+    [tariffs, unitTariffRows, accounts, cloudShare, paidSplit, freeSplit]
+  );
 
   // ---------------- PROGNOZ (months/years) ----------------
   const [months, setMonths] = useLocalStorageState("app.months", 24);
@@ -1588,7 +633,7 @@ export default function App() {
   // breakeven moved below (after tariffForecast init)
 
   // ---------- Helper: distribute by adoption within family ----------
-  function distributeByAdoption(
+  /* function distributeByAdoption(
     totalNew: number,
     family: Tariff["family"],
     all: Tariff[]
@@ -1611,10 +656,10 @@ export default function App() {
     }
     if (free) alloc[free.id] = Math.max(0, Math.round(totalNew - used));
     return alloc; // {tariffId: newCount}
-  }
+  }*/
 
   // ---------- Forecast v7 by tariffs (separate from legacy) ----------
-  type TFRow = {
+  /* type TFRow = {
     month: number;
     activeByFamily: { camera: number; smarthome: number; bundle: number };
     revenue: number;
@@ -1627,247 +672,10 @@ export default function App() {
       costByTariff: Record<string, number>;
       profitByTariff: Record<string, number>;
     };
-  };
+  };*/
 
-  const tariffForecast = useMemo(() => {
-    // competitor schedule
-    const competitorTarget = competitorBase * competitorConversionPct;
-    const competitorPlan = makeCompetitorSchedule({
-      mode: competitorMode,
-      total: competitorTarget,
-      months: competitorHorizon,
-      params: { k: competitorK, x0: competitorMid },
-    });
-
-    // initial pools
-    let cameraPool = Math.round(cloudAccounts); // из текущей базы облака
-    let smhPool = Math.round(smhBaseStart);
-    let bundlePool = Math.round(bundleBaseStart);
-
-    // initial active by tariff via baseShare0
-    const activeByTariff: Record<string, number> = {};
-    const families: Tariff["family"][] = ["camera", "smarthome", "bundle"];
-    for (const fam of families) {
-      const pool =
-        fam === "camera"
-          ? cameraPool
-          : fam === "smarthome"
-          ? smhPool
-          : bundlePool;
-      const ts = tariffs.filter((t) => t.family === fam);
-      let used = 0;
-      for (const t of ts) {
-        const share = t.forecast?.baseShare0 || 0;
-        const v = Math.round(pool * share);
-        if (v > 0) {
-          activeByTariff[t.id] = v;
-          used += v;
-        } else {
-          activeByTariff[t.id] = 0;
-        }
-      }
-      // remainder to free
-      const free = ts.find((t) => (t.price || 0) === 0);
-      if (free)
-        activeByTariff[free.id] =
-          (activeByTariff[free.id] || 0) + Math.max(0, pool - used);
-    }
-
-    const rows: TFRow[] = [];
-    let cumProfit = 0;
-
-    for (let m = 1; m <= months; m++) {
-      // new camera from sales
-      const sales = Math.round(
-        salesStart * Math.pow(1 + salesGrowthPct, m - 1)
-      );
-      const newAccFromSales = sales / Math.max(avgCams, 1e-9);
-      const newCloud = newAccFromSales * cloudNewShare;
-      const compGainTotal = m <= competitorHorizon ? competitorPlan[m - 1] : 0;
-      const compGainCamera = compGainTotal * (competitorSplit.camera || 0);
-      const compGainBundle = compGainTotal * (competitorSplit.bundle || 0);
-      const compGainSmh = compGainTotal * (competitorSplit.smarthome || 0);
-
-      // pools evolution (for info)
-      cameraPool = Math.round(
-        cameraPool * (1 - churn) + newAccFromSales + compGainCamera
-      );
-      smhPool = Math.round(smhPool * (1 + smhGrowth) + compGainSmh);
-      const prevBundlePool = bundlePool;
-      bundlePool = Math.round(bundlePool * (1 + bundleGrowth) + compGainBundle);
-
-      // allocations for new in month
-      const newByTariff: Record<string, number> = {};
-      const allocCam = distributeByAdoption(
-        newCloud + compGainCamera,
-        "camera",
-        tariffs
-      );
-      for (const k in allocCam)
-        newByTariff[k] = (newByTariff[k] || 0) + allocCam[k];
-
-      const prevSmhPool = Math.round(
-        smhPool / (1 + smhGrowth) - compGainSmh / (1 + smhGrowth)
-      ); // approx previous before growth
-      const smhDelta = Math.max(0, smhPool - prevSmhPool);
-      const allocSmh = distributeByAdoption(smhDelta, "smarthome", tariffs);
-      for (const k in allocSmh)
-        newByTariff[k] = (newByTariff[k] || 0) + allocSmh[k];
-
-      const bundleDelta = Math.max(0, bundlePool - prevBundlePool);
-      const allocBundle = distributeByAdoption(bundleDelta, "bundle", tariffs);
-      for (const k in allocBundle)
-        newByTariff[k] = (newByTariff[k] || 0) + allocBundle[k];
-
-      // upgrades/downgrades and churn
-      const nextActiveByTariff: Record<string, number> = { ...activeByTariff };
-      const upIn: Record<string, number> = {};
-      const downIn: Record<string, number> = {};
-
-      for (const t of tariffs) {
-        const id = t.id;
-        const base = activeByTariff[id] || 0;
-        const upOut = t.forecast?.upgradeTo
-          ? base * (t.forecast?.upgradeRate || 0)
-          : 0;
-        const downOut = t.forecast?.downgradeTo
-          ? base * (t.forecast?.downgradeRate || 0)
-          : 0;
-        if (t.forecast?.upgradeTo)
-          upIn[t.forecast.upgradeTo] =
-            (upIn[t.forecast.upgradeTo] || 0) + upOut;
-        if (t.forecast?.downgradeTo)
-          downIn[t.forecast.downgradeTo] =
-            (downIn[t.forecast.downgradeTo] || 0) + downOut;
-        const churnRate = t.forecast?.churn || 0;
-        const churnOut = base * churnRate;
-        nextActiveByTariff[id] = Math.max(
-          0,
-          Math.round(base - upOut - downOut - churnOut + (newByTariff[id] || 0))
-        );
-      }
-      for (const id in upIn)
-        nextActiveByTariff[id] = Math.round(
-          (nextActiveByTariff[id] || 0) + upIn[id]
-        );
-      for (const id in downIn)
-        nextActiveByTariff[id] = Math.round(
-          (nextActiveByTariff[id] || 0) + downIn[id]
-        );
-
-      // economics per tariff
-      const revByTariff: Record<string, number> = {};
-      const costByTariff: Record<string, number> = {};
-      const profitByTariff: Record<string, number> = {};
-
-      const tuyaApiUSD = tuyaApiUSDpm;
-      const tuyaMsgUSD = tuyaMsgUSDpm;
-      const tuyaRelayUSD = tuyaRelayUSDpGB;
-
-      for (const t of tariffs) {
-        const id = t.id;
-        const act = nextActiveByTariff[id] || 0;
-        const price = t.price || 0;
-        let revenue = act * price;
-
-        // storage/cdn if archive
-        const archiveDays = t.archiveDays || 0;
-        const includedCams = t.includedCams || 1;
-        const gbCapPerCam = t.gbCapPerCam || 0;
-        const overageRUBperGB = t.overageRUBperGB || 0;
-
-        const vc = t.varCost || {};
-        const vcStorage = vc.yandexStorageRUBpGBm ?? ycStorageRUBpGBm;
-        const vcCDN = vc.yandexCDNRUBpGB ?? ycCDNRUBpGB;
-        const vcCdnRatio = vc.cdnRatio ?? cdnRatio;
-        const vcGbDay = vc.avgGbPerDayMotion ?? gbPerDay; // используем текущий gbPerDay
-        const vcRelayUSD = vc.tuyaRelayUSDpGB ?? tuyaRelayUSD;
-        const vcApiUSD = vc.tuyaAPIperMLNUSD ?? tuyaApiUSD;
-        const vcMsgUSD = vc.tuyaMsgsperMLNUSD ?? tuyaMsgUSD;
-
-        let yandexCost = 0;
-        let overageRev = 0;
-        if (archiveDays > 0) {
-          const factPerCamGB = vcGbDay * archiveDays;
-          const billPerCamGB = Math.min(
-            factPerCamGB,
-            gbCapPerCam || factPerCamGB
-          );
-          const storageGB = billPerCamGB * includedCams;
-          const cdnGB = storageGB * vcCdnRatio;
-          yandexCost = act * (storageGB * vcStorage + cdnGB * vcCDN);
-          if (
-            overageRUBperGB > 0 &&
-            gbCapPerCam &&
-            factPerCamGB > gbCapPerCam
-          ) {
-            const overGB = (factPerCamGB - gbCapPerCam) * includedCams;
-            overageRev = act * overGB * overageRUBperGB;
-          }
-        }
-
-        // Tuya approximate variable cost per account (с учётом мультипликаторов и отключения для free)
-        const apiCallsPerAcc = apiPerDay * monthDays; // от глобалей (приближение)
-        const msgsPerAcc = 10 * monthDays;
-        const relayGBPerAcc = camHoursPerDayForRelay * 0.72 * monthDays; // 0.72 GB/h
-        const wTariff = (t.price || 0) > 0 ? 1 : freeLoadShare;
-        const apiMul = (t.varCost?.tuyaApiMul ?? 1) * wTariff;
-        const msgsMul = (t.varCost?.tuyaMsgsMul ?? 1) * wTariff;
-        const relayMul = (t.varCost?.tuyaRelayMul ?? 1) * wTariff;
-        const tuyaCostPerAcc =
-          Math.max(0, (apiCallsPerAcc - 1_000_000) / 1_000_000) *
-            vcApiUSD *
-            fx *
-            apiMul +
-          (msgsPerAcc / 1_000_000) * vcMsgUSD * fx * msgsMul +
-          relayGBPerAcc * vcRelayUSD * fx * relayMul;
-        const tuyaCost = act * tuyaCostPerAcc;
-
-        const cost = yandexCost + tuyaCost;
-        revenue += overageRev;
-        const profit = revenue - cost;
-        revByTariff[id] = revenue;
-        costByTariff[id] = cost;
-        profitByTariff[id] = profit;
-      }
-
-      // summary
-      const activeByFamily = { camera: 0, smarthome: 0, bundle: 0 } as {
-        camera: number;
-        smarthome: number;
-        bundle: number;
-      };
-      for (const t of tariffs) {
-        const fam = t.family;
-        activeByFamily[fam] += nextActiveByTariff[t.id] || 0;
-      }
-      const revenue = Object.values(revByTariff).reduce((s, v) => s + v, 0);
-      const cost = Object.values(costByTariff).reduce((s, v) => s + v, 0);
-      const profit = revenue - cost;
-      cumProfit += profit;
-
-      rows.push({
-        month: m,
-        activeByFamily,
-        revenue,
-        cost,
-        profit,
-        cumProfit,
-        breakdown: {
-          activeByTariff: { ...nextActiveByTariff },
-          revByTariff,
-          costByTariff,
-          profitByTariff,
-        },
-      });
-
-      // move to next state
-      for (const k in nextActiveByTariff)
-        activeByTariff[k] = nextActiveByTariff[k];
-    }
-
-    return { rows };
-  }, [
+  const tariffForecast = useTariffForecast({
+    tariffs,
     months,
     salesStart,
     salesGrowthPct,
@@ -1884,8 +692,6 @@ export default function App() {
     smhGrowth,
     bundleBaseStart,
     bundleGrowth,
-    tariffs,
-    // cost params
     ycStorageRUBpGBm,
     ycCDNRUBpGB,
     cdnRatio,
@@ -1899,7 +705,7 @@ export default function App() {
     camHoursPerDayForRelay,
     churn,
     cloudAccounts,
-  ]);
+  });
 
   const [detailMonth, setDetailMonth] = useState<number | null>(null);
 
@@ -2003,6 +809,58 @@ export default function App() {
                 </li>
               </ul>
             </div>
+          </div>
+        </Section>
+
+        <Section title="Источники тарифов (ссылки)">
+          <div className="text-sm leading-relaxed space-y-2">
+            <p>
+              Ниже — открытые страницы провайдеров, на основе которых заданы
+              цены переменных издержек. Пожалуйста, уточняйте актуальность —
+              провайдеры регулярно обновляют условия.
+            </p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>
+                Yandex Cloud Object Storage (₽/ГБ·мес):
+                <a
+                  className="ml-1 text-indigo-600 hover:underline"
+                  href="https://cloud.yandex.ru/prices/object-storage"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  cloud.yandex.ru/prices/object-storage
+                </a>
+              </li>
+              <li>
+                Yandex Cloud CDN (₽/ГБ трафика):
+                <a
+                  className="ml-1 text-indigo-600 hover:underline"
+                  href="https://cloud.yandex.ru/prices/cdn"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  cloud.yandex.ru/prices/cdn
+                </a>
+              </li>
+              <li>
+                Tuya IoT Platform — API/Msgs/Relay (USD):
+                <a
+                  className="ml-1 text-indigo-600 hover:underline"
+                  href="https://developer.tuya.com/en/pricing"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  developer.tuya.com/en/pricing
+                </a>
+                <span className="text-gray-500 ml-2">(тарифы SDK, API calls, Messaging, Relay)</span>
+              </li>
+            </ul>
+            <p className="text-xs text-gray-500">
+              Примечание: для упрощения расчётов используются усреднения и
+              допущения (например, 0.72 ГБ/час для relay, бесплатная ступень API
+              1 млн/мес и т.п.). Подкорректируйте поля в блоке «Тарифы за
+              единицу (RUB/USD)» и мультипликаторы под ваши условия.
+            </p>
           </div>
         </Section>
 
