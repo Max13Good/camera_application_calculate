@@ -208,6 +208,19 @@ export function useTariffForecast(opts: {
       const revByTariff: Record<string, number> = {};
       const costByTariff: Record<string, number> = {};
       const profitByTariff: Record<string, number> = {};
+      const yCostByTariff: Record<string, number> = {};
+      const tCostByTariff: Record<string, number> = {};
+      const detail: Array<{
+        id: string;
+        name: string;
+        family: 'camera' | 'smarthome' | 'bundle';
+        active: number;
+        revenue: number;
+        yCost: number;
+        tCost: number;
+        cost: number;
+        profit: number;
+      }> = [];
 
       const tuyaApiUSD = tuyaApiUSDpm;
       const tuyaMsgUSD = tuyaMsgUSDpm;
@@ -278,6 +291,19 @@ export function useTariffForecast(opts: {
         revByTariff[id] = revenue;
         costByTariff[id] = cost;
         profitByTariff[id] = profit;
+        yCostByTariff[id] = yandexCost;
+        tCostByTariff[id] = tuyaCost;
+        detail.push({
+          id,
+          name: t.name,
+          family: t.family,
+          active: act,
+          revenue,
+          yCost: yandexCost,
+          tCost: tuyaCost,
+          cost,
+          profit,
+        });
       }
 
       const revenue = Object.values(revByTariff).reduce((s, v) => s + v, 0);
@@ -297,7 +323,10 @@ export function useTariffForecast(opts: {
           revByTariff,
           costByTariff,
           profitByTariff,
+          yCostByTariff,
+          tCostByTariff,
         },
+        detail,
       });
     }
 

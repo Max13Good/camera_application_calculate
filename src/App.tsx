@@ -96,6 +96,8 @@ const thCls = "py-2 px-2 whitespace-nowrap text-xs leading-tight text-gray-600";
 const tdNumCls = "px-2 text-right";
 const tdTextCls = "px-2";
 
+const APP_VERSION = "v-forecast-link-1";
+
 export default function App() {
   // ---------- Global inputs ----------
   const [fx, setFx] = useLocalStorageState("app.fx", 90); // ₽ за 1 USD
@@ -722,6 +724,8 @@ export default function App() {
 
   // ---------------- UI ----------------
   const [tab, setTab] = useLocalStorageState("app.tab", "calc");
+  const [sliceSource, setSliceSource] = useLocalStorageState("app.sliceSource", "forecast");
+  const [sliceMonth, setSliceMonth] = useLocalStorageState("app.sliceMonth", 1);
 
   const lastTar = tariffForecast.rows[tariffForecast.rows.length - 1];
 
@@ -1352,6 +1356,66 @@ export default function App() {
 
             {/* Portfolio now */}
             <Section title="Срез сейчас по портфелю (по семействам)">
+              <div className="mb-3 flex items-center gap-3 text-sm">
+                <div className="text-gray-600">Источник:</div>
+                <select
+                  className={inputCls}
+                  style={{ width: 220 }}
+                  value={sliceSource}
+                  onChange={(e) => setSliceSource(e.target.value)}
+                >
+                  <option value="forecast">Прогноз</option>
+                  <option value="inputs">Текущие вводные</option>
+                </select>
+                {sliceSource === "forecast" && (
+                  <>
+                    <div className="text-gray-600">Месяц:</div>
+                    <input
+                      className={`${inputCls} w-24`}
+                      type="number"
+                      min={1}
+                      max={months}
+                      value={sliceMonth}
+                      onChange={(e) =>
+                        setSliceMonth(
+                          Math.min(months, Math.max(1, Number(e.target.value)))
+                        )
+                      }
+                    />
+                  </>
+                )}
+                <div className="ml-auto text-xs text-gray-500">Версия: {APP_VERSION}</div>
+              </div>
+              {(() => {
+                const fr =
+                  sliceSource === "forecast"
+                    ? tariffForecast.rows[Math.max(0, Math.min(months - 1, sliceMonth - 1))]
+                    : null;
+                const sliceRows: Array<{ id: string; name: string; family: 'camera'|'smarthome'|'bundle'; active: number; revenue: number; yCost: number; tCost: number; cost: number; profit: number }>=
+                  sliceSource === "forecast" && fr
+                    ? fr.detail
+                    : tariffPortfolio.rows.map((r) => ({
+                        id: r.id,
+                        name: r.name,
+                        family: r.family as any,
+                        active: r.accs,
+                        revenue: r.revenue,
+                        yCost: r.yCost,
+                        tCost: r.tCost,
+                        cost: r.cost,
+                        profit: r.profit,
+                      }));
+                const totals = sliceRows.reduce((s: {active:number; revenue:number; yCost:number; tCost:number; cost:number; profit:number}, r) => ({
+                    active: s.active + (r.active || 0),
+                    revenue: s.revenue + (r.revenue || 0),
+                    yCost: s.yCost + (r.yCost || 0),
+                    tCost: s.tCost + (r.tCost || 0),
+                    cost: s.cost + (r.cost || 0),
+                    profit: s.profit + (r.profit || 0),
+                  }), { active: 0, revenue: 0, yCost: 0, tCost: 0, cost: 0, profit: 0 });
+                const payingAccs = sliceRows.reduce((s: number, r) => s + ((tariffs.find((t) => t.id === r.id)?.price || 0) > 0 ? (r.active || 0) : 0), 0);
+                return (
+                  <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div className="bg-gray-50 rounded-xl p-3">
                   <div className="text-gray-500">Аккаунтов всего</div>
@@ -1362,7 +1426,7 @@ export default function App() {
                 <div className="bg-gray-50 rounded-xl p-3">
                   <div className="text-gray-500">Платящих аккаунтов</div>
                   <div className="text-xl font-semibold">
-                    <Num value={cloudAccounts} />
+                    <Num value={sliceSource === "forecast" ? payingAccs : cloudAccounts} />
                   </div>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-3">
@@ -1393,14 +1457,14 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tariffPortfolio.rows.map((r) => (
+                    {sliceRows.map((r) => (
                       <tr key={r.id} className="border-t">
                         <td className={`${tdTextCls} font-medium py-1`}>
                           {r.name}
                         </td>
                         <td className={tdTextCls}>{r.family}</td>
                         <td className={tdNumCls}>
-                          <Num value={r.accs} />
+                          <Num value={r.active} />
                         </td>
                         <td className={tdNumCls}>
                           <Num value={r.revenue} />
@@ -1416,7 +1480,7 @@ export default function App() {
                         </td>
                         <td
                           className={`${tdNumCls} ${
-                            r.profit >= 0 ? "text-green-600" : "text-red-600"
+                            (r.profit ?? 0) >= 0 ? "text-green-600" : "text-red-600"
                           }`}
                         >
                           <Num value={r.profit} />
@@ -1429,33 +1493,36 @@ export default function App() {
                       <td className="py-2">ИТОГО</td>
                       <td></td>
                       <td className={tdNumCls}>
-                        <Num value={tariffPortfolio.totals.accs} />
+                        <Num value={totals.active} />
                       </td>
                       <td className={tdNumCls}>
-                        <Num value={tariffPortfolio.totals.revenue} />
+                        <Num value={totals.revenue} />
                       </td>
                       <td className={tdNumCls}>
-                        <Num value={tariffPortfolio.totals.yCost} />
+                        <Num value={totals.yCost} />
                       </td>
                       <td className={tdNumCls}>
-                        <Num value={tariffPortfolio.totals.tCost} />
+                        <Num value={totals.tCost} />
                       </td>
                       <td className={tdNumCls}>
-                        <Num value={tariffPortfolio.totals.cost} />
+                        <Num value={totals.cost} />
                       </td>
                       <td
                         className={`${tdNumCls} ${
-                          tariffPortfolio.totals.profit >= 0
+                          totals.profit >= 0
                             ? "text-green-600"
                             : "text-red-600"
                         }`}
                       >
-                        <Num value={tariffPortfolio.totals.profit} />
+                        <Num value={totals.profit} />
                       </td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
+                  </>
+                );
+              })()}
             </Section>
           </>
         )}
