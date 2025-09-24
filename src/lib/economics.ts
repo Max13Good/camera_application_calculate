@@ -171,11 +171,13 @@ export function computeTariffPortfolio(opts: {
   function allocByShare(list: any[], pool: number) {
     const sum = list.reduce((s, t) => s + (t.forecast?.baseShare0 || 0), 0);
     if (sum > 0) {
-      for (const t of list)
-        alloc[t.id] = (alloc[t.id] || 0) + Math.round(pool * ((t.forecast?.baseShare0 || 0) / sum));
-    } else if (list.length > 0) {
-      const w = 1 / list.length;
-      for (const t of list) alloc[t.id] = (alloc[t.id] || 0) + Math.round(pool * w);
+      for (const t of list) {
+        const share = (t.forecast?.baseShare0 || 0) / sum;
+        alloc[t.id] = (alloc[t.id] || 0) + Math.round(pool * share);
+      }
+    } else {
+      // Явно не распределяем пул, если сумма долей = 0.
+      // Это поведение желаемо, чтобы тарифы с нулевыми долями не получали аллокации автоматически.
     }
   }
 
@@ -210,4 +212,3 @@ export function computeTariffPortfolio(opts: {
   );
   return { rows, totals };
 }
-
