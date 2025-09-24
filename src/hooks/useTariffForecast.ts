@@ -194,6 +194,20 @@ export function useTariffForecast(opts: {
       const tuyaMsgUSD = tuyaMsgUSDpm;
       const tuyaRelayUSD = tuyaRelayUSDpGB;
 
+      // Precompute org-level free API allowance across all tariffs for the month
+      const apiCallsPerAcc = apiPerDay * monthDays;
+      const msgsPerAcc = 10 * monthDays;
+      const relayGBPerAcc = camHoursPerDayForRelay * 0.72 * monthDays;
+      let totalApiCallsWeighted = 0;
+      for (const t of tariffs) {
+        const act = nextActiveByTariff[t.id] || 0;
+        const wTariff = (t.price || 0) > 0 ? 1 : freeLoadShare;
+        const apiMul = ((t.varCost as any)?.tuyaApiMul ?? 1) * wTariff;
+        totalApiCallsWeighted += act * apiCallsPerAcc * apiMul;
+      }
+      const apiFree = 1_000_000;
+      const apiFactor = totalApiCallsWeighted > 0 ? Math.max(0, (totalApiCallsWeighted - apiFree) / totalApiCallsWeighted) : 0;
+
       for (const t of tariffs) {
         const id = t.id;
         const act = nextActiveByTariff[id] || 0;
@@ -201,15 +215,15 @@ export function useTariffForecast(opts: {
         let revenue = act * price;
 
         const archiveDays = t.archiveDays || 0;
-        const includedCams = t.includedCams || 1;
+        const includedCams = t.includedCams || avgCams;
         const gbCapPerCam = t.gbCapPerCam || 0;
         const overageRUBperGB = t.overageRUBperGB || 0;
 
         const vc = t.varCost || {};
-        const vcStorage = (vc as any).yandexStorageRUBpGBm ?? ycStorageRUBpGBm;
-        const vcCDN = (vc as any).yandexCDNRUBpGB ?? ycCDNRUBpGB;
-        const vcCdnRatio = (vc as any).cdnRatio ?? cdnRatio;
-        const vcGbDay = (vc as any).avgGbPerDayMotion ?? gbPerDay;
+        const vcStorage = ((vc as any).yandexStorageRUBpGBm ?? ycStorageRUBpGBm) * (((vc as any).yandexStorageRUBpGBmMul ?? 1));
+        const vcCDN = ((vc as any).yandexCDNRUBpGB ?? ycCDNRUBpGB) * (((vc as any).yandexCDNRUBpGBMul ?? 1));
+        const vcCdnRatio = (((vc as any).cdnRatio ?? cdnRatio) * (((vc as any).cdnRatioMul ?? 1)));
+        const vcGbDay = (((vc as any).avgGbPerDayMotion ?? gbPerDay) * (((vc as any).avgGbPerDayMotionMul ?? 1)));
         const vcRelayUSD = (vc as any).tuyaRelayUSDpGB ?? tuyaRelayUSD;
         const vcApiUSD = (vc as any).tuyaAPIperMLNUSD ?? tuyaApiUSD;
         const vcMsgUSD = (vc as any).tuyaMsgsperMLNUSD ?? tuyaMsgUSD;
@@ -228,15 +242,13 @@ export function useTariffForecast(opts: {
           }
         }
 
-        const apiCallsPerAcc = apiPerDay * monthDays;
-        const msgsPerAcc = 10 * monthDays;
-        const relayGBPerAcc = camHoursPerDayForRelay * 0.72 * monthDays;
         const wTariff = (t.price || 0) > 0 ? 1 : freeLoadShare;
         const apiMul = ((t.varCost as any)?.tuyaApiMul ?? 1) * wTariff;
         const msgsMul = ((t.varCost as any)?.tuyaMsgsMul ?? 1) * wTariff;
         const relayMul = ((t.varCost as any)?.tuyaRelayMul ?? 1) * wTariff;
         const tuyaCostPerAcc =
-          Math.max(0, (apiCallsPerAcc - 1_000_000) / 1_000_000) * vcApiUSD * fx * apiMul +
+          // Apply org-level free API pool via apiFactor (0..1)
+          (apiCallsPerAcc / 1_000_000) * vcApiUSD * fx * apiMul * apiFactor +
           (msgsPerAcc / 1_000_000) * vcMsgUSD * fx * msgsMul +
           relayGBPerAcc * vcRelayUSD * fx * relayMul;
         const tuyaCost = act * tuyaCostPerAcc;
