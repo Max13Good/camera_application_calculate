@@ -680,6 +680,10 @@ export default function App() {
     salesStart,
     salesGrowthPct,
     avgCams,
+    accounts,
+    cloudShare,
+    paidSplit,
+    freeSplit,
     cloudNewShare,
     competitorBase,
     competitorConversionPct,
@@ -1458,6 +1462,37 @@ export default function App() {
 
         {tab === "forecast" && (
           <>
+            <Section title="Как работает прогноз (для друзей)">
+              <div className="text-sm text-gray-700 space-y-2">
+                <p>
+                  Прогноз считает по месяцам: сколько у нас активных по тарифам,
+                  сколько выручки и во что обходится облако. Дальше просто:
+                  прибыль = выручка − (Yandex + Tuya).
+                </p>
+                <ul className="list-disc pl-5 space-y-1">
+                  <li>
+                    Стартовую базу делю по семействам с учётом твоего сценария из
+                    «Калькулятора» (платящие/бесплатные + сплиты по семействам).
+                  </li>
+                  <li>
+                    Внутри семейства старт делю по тарифам по их долям
+                    <b> baseShare0</b> (см. вкладку «Тарифы → Микс базовых долей»).
+                  </li>
+                  <li>
+                    Каждый месяц: добавляю новых (из продаж и миграций),
+                    применяю churn, апгрейды/даунгрейды, и считаю затраты/выручку.
+                  </li>
+                  <li>
+                    Yandex cost = хранение + CDN по биллинговому объёму
+                    (лимиты/архив/мультипликаторы тарифа учитываю).
+                  </li>
+                  <li>
+                    Tuya cost = API + сообщения + relay. «Бесплатный» миллион
+                    API считаю на уровне всей базы в месяц.
+                  </li>
+                </ul>
+              </div>
+            </Section>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Section title="Параметры прогноза (месяцы)">
                 <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">

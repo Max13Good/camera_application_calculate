@@ -7,6 +7,11 @@ export function useTariffForecast(opts: {
   salesStart: number;
   salesGrowthPct: number;
   avgCams: number;
+  // scenario from Calculator
+  accounts: number;
+  cloudShare: number;
+  paidSplit: { camera: number; smarthome: number; bundle: number };
+  freeSplit: { camera: number; smarthome: number };
   cloudNewShare: number;
   competitorBase: number;
   competitorConversionPct: number;
@@ -15,9 +20,9 @@ export function useTariffForecast(opts: {
   competitorK: number;
   competitorMid: number | null;
   competitorSplit: { camera: number; smarthome: number; bundle: number };
-  smhBaseStart: number;
+  smhBaseStart: number; // kept for growth math; initial pools now from scenario splits
   smhGrowth: number;
-  bundleBaseStart: number;
+  bundleBaseStart: number; // kept for growth math; initial pools now from scenario splits
   bundleGrowth: number;
   // cost params
   ycStorageRUBpGBm: number;
@@ -43,6 +48,10 @@ export function useTariffForecast(opts: {
       salesGrowthPct,
       avgCams,
       cloudNewShare,
+      accounts,
+      cloudShare,
+      paidSplit,
+      freeSplit,
       competitorBase,
       competitorConversionPct,
       competitorHorizon,
@@ -101,10 +110,20 @@ export function useTariffForecast(opts: {
       return alloc;
     }
 
-    // initial active by tariff via baseShare0 (текущая база)
-    let cameraPool = Math.round(cloudAccounts);
-    let smhPool = Math.round(smhBaseStart);
-    let bundlePool = Math.round(bundleBaseStart);
+    // initial active by tariff via Calculator scenario (текущая база)
+    const paidAcc = Math.max(0, Math.round(accounts * cloudShare));
+    const freeAcc = Math.max(0, Math.round(accounts - paidAcc));
+    let cameraPool = Math.max(
+      0,
+      Math.round(paidAcc * (paidSplit?.camera || 0) + freeAcc * (freeSplit?.camera || 0))
+    );
+    let smhPool = Math.max(0, Math.round(paidAcc * (paidSplit?.smarthome || 0)));
+    let bundlePool = Math.max(0, Math.round(paidAcc * (paidSplit?.bundle || 0)));
+
+    // Fallbacks: if scenario splits yield 0, use legacy starts
+    if (cameraPool === 0 && cloudAccounts) cameraPool = Math.round(cloudAccounts);
+    if (smhPool === 0 && smhBaseStart) smhPool = Math.round(smhBaseStart);
+    if (bundlePool === 0 && bundleBaseStart) bundlePool = Math.round(bundleBaseStart);
 
     const activeByTariff: Record<string, number> = {};
     for (const fam of ["camera", "smarthome", "bundle"] as const) {
