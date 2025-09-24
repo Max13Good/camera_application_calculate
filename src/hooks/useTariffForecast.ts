@@ -33,6 +33,7 @@ export function useTariffForecast(opts: {
   camHoursPerDayForRelay: number;
   churn: number;
   cloudAccounts: number;
+  freeLoadShare?: number;
 }) {
   const r = useMemo(() => {
     const {
@@ -66,6 +67,7 @@ export function useTariffForecast(opts: {
       camHoursPerDayForRelay,
       churn,
       cloudAccounts,
+      freeLoadShare = 0.25,
     } = opts;
 
     // competitor schedule
@@ -176,7 +178,7 @@ export function useTariffForecast(opts: {
         const apiCallsPerAcc = apiPerDay * monthDays;
         const msgsPerAcc = 10 * monthDays;
         const relayGBPerAcc = camHoursPerDayForRelay * 0.72 * monthDays;
-        const wTariff = (t.price || 0) > 0 ? 1 : 0.25;
+        const wTariff = (t.price || 0) > 0 ? 1 : freeLoadShare;
         const apiMul = ((t.varCost as any)?.tuyaApiMul ?? 1) * wTariff;
         const msgsMul = ((t.varCost as any)?.tuyaMsgsMul ?? 1) * wTariff;
         const relayMul = ((t.varCost as any)?.tuyaRelayMul ?? 1) * wTariff;

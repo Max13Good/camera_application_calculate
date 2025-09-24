@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { inputCls } from "../ui/styles";
 
 export default function BaseMixEditor({
@@ -7,6 +8,7 @@ export default function BaseMixEditor({
   tariffs: any[];
   setTariffs: (t: any[]) => void;
 }) {
+  const [mode, setMode] = useState<"paid" | "free">("paid");
   const families: Array<{
     key: "camera" | "smarthome" | "bundle";
     title: string;
@@ -28,7 +30,9 @@ export default function BaseMixEditor({
   };
 
   const normalizeFamily = (fam: "camera" | "smarthome" | "bundle") => {
-    const list = tariffs.filter((t: any) => t.family === fam);
+    const list = tariffs.filter(
+      (t: any) => t.family === fam && (mode === "paid" ? (t.price || 0) > 0 : (t.price || 0) === 0)
+    );
     const sum = list.reduce(
       (s: number, t: any) => s + (t.forecast?.baseShare0 || 0),
       0
@@ -36,7 +40,7 @@ export default function BaseMixEditor({
     if (sum <= 0) return;
     setTariffs(
       tariffs.map((t: any) =>
-        t.family === fam
+        t.family === fam && list.some((x: any) => x.id === t.id)
           ? {
               ...t,
               forecast: {
@@ -50,11 +54,13 @@ export default function BaseMixEditor({
   };
 
   const evenFamily = (fam: "camera" | "smarthome" | "bundle") => {
-    const list = tariffs.filter((t: any) => t.family === fam);
+    const list = tariffs.filter(
+      (t: any) => t.family === fam && (mode === "paid" ? (t.price || 0) > 0 : (t.price || 0) === 0)
+    );
     const w = list.length ? 1 / list.length : 0;
     setTariffs(
       tariffs.map((t: any) =>
-        t.family === fam
+        t.family === fam && list.some((x: any) => x.id === t.id)
           ? { ...t, forecast: { ...(t.forecast || {}), baseShare0: w } }
           : t
       )
@@ -63,8 +69,32 @@ export default function BaseMixEditor({
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <div className="text-sm font-medium">Группа:</div>
+        <div className="bg-white rounded-xl border border-gray-200 p-1">
+          <button
+            className={`px-3 py-1 rounded-lg text-sm ${
+              mode === "paid" ? "bg-indigo-600 text-white" : "hover:bg-gray-100"
+            }`}
+            onClick={() => setMode("paid")}
+          >
+            Платные
+          </button>
+          <button
+            className={`px-3 py-1 rounded-lg text-sm ${
+              mode === "free" ? "bg-indigo-600 text-white" : "hover:bg-gray-100"
+            }`}
+            onClick={() => setMode("free")}
+          >
+            Бесплатные
+          </button>
+        </div>
+        <div className="text-xs text-gray-600">Сумма долей по семейству в выбранной группе = 1</div>
+      </div>
       {families.map((f) => {
-        const list = tariffs.filter((t: any) => t.family === f.key);
+        const list = tariffs.filter(
+          (t: any) => t.family === f.key && (mode === "paid" ? (t.price || 0) > 0 : (t.price || 0) === 0)
+        );
         const sum = list.reduce(
           (s: number, t: any) => s + (t.forecast?.baseShare0 || 0),
           0
@@ -75,7 +105,7 @@ export default function BaseMixEditor({
             className="bg-gray-50 rounded-xl p-4 border border-gray-100"
           >
             <div className="flex items-center gap-3 mb-3">
-              <div className="font-semibold">{f.title}</div>
+              <div className="font-semibold">{f.title} — {mode === "paid" ? "платные" : "бесплатные"}</div>
               <div className="text-xs text-gray-600">
                 Сумма долей:{" "}
                 <span

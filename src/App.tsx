@@ -705,6 +705,7 @@ export default function App() {
     camHoursPerDayForRelay,
     churn,
     cloudAccounts,
+    freeLoadShare,
   });
 
   const [detailMonth, setDetailMonth] = useState<number | null>(null);
