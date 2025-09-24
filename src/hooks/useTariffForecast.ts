@@ -79,7 +79,29 @@ export function useTariffForecast(opts: {
       params: { k: competitorK, x0: competitorMid },
     });
 
-    // initial active by tariff via baseShare0
+    // helper: distribute new additions inside family by adoptionNew among paid tariffs;
+    // leftover to free if exists
+    function distributeByAdoption(totalNew: number, family: "camera" | "smarthome" | "bundle", all: any[]) {
+      const familyTariffs = all.filter((t) => t.family === family);
+      const paid = familyTariffs.filter((t) => (t.price || 0) > 0);
+      const free = familyTariffs.find((t) => (t.price || 0) === 0) || null;
+      const sumAdoption = paid.reduce((s, t) => s + (t.forecast?.adoptionNew || 0), 0);
+      const scale = sumAdoption > 0 ? 1 / sumAdoption : 0;
+      const alloc: Record<string, number> = {};
+      let used = 0;
+      if (sumAdoption > 0) {
+        for (const t of paid) {
+          const v = Math.round(totalNew * (t.forecast?.adoptionNew || 0) * scale);
+          if (v > 0) alloc[t.id] = v;
+          used += v;
+        }
+      }
+      const rest = Math.max(0, Math.round(totalNew - used));
+      if (free && rest > 0) alloc[free.id] = (alloc[free.id] || 0) + rest;
+      return alloc;
+    }
+
+    // initial active by tariff via baseShare0 (текущая база)
     let cameraPool = Math.round(cloudAccounts);
     let smhPool = Math.round(smhBaseStart);
     let bundlePool = Math.round(bundleBaseStart);
@@ -111,27 +133,58 @@ export function useTariffForecast(opts: {
     let nextActiveByTariff: Record<string, number> = { ...activeByTariff };
     for (let m = 1; m <= months; m++) {
       const sales = Math.round(salesStart * Math.pow(1 + salesGrowthPct, m - 1));
-      const newAcc = sales * avgCams;
-      const newCloudAcc = Math.round(newAcc * cloudNewShare);
+      // sales — это камеры в месяц; переводим в аккаунты
+      const newAccFromSales = Math.round(sales / Math.max(avgCams, 1e-9));
+      const newCloudAcc = Math.round(newAccFromSales * cloudNewShare);
 
       const migAll = Math.round(competitorPlan[Math.min(m - 1, competitorPlan.length - 1)] || 0);
       const migCam = Math.round(migAll * (competitorSplit.camera || 0));
       const migSmh = Math.round(migAll * (competitorSplit.smarthome || 0));
       const migBundle = Math.round(migAll * (competitorSplit.bundle || 0));
 
-      cameraPool += newCloudAcc + migCam;
-      smhPool += Math.round(smhBaseStart * Math.pow(1 + smhGrowth, m - 1) * (m === 1 ? 1 : 0)) + migSmh;
-      bundlePool += Math.round(bundleBaseStart * Math.pow(1 + bundleGrowth, m - 1) * (m === 1 ? 1 : 0)) + migBundle;
+      // pools are informative; фактическое распределение делаем по тарифам ниже
+      cameraPool = Math.max(0, Math.round((cameraPool + newCloudAcc + migCam) * (1 - churn)));
+      smhPool = Math.max(0, Math.round((smhPool * (1 + (m === 1 ? 0 : smhGrowth)) + migSmh) * (1 - churn)));
+      bundlePool = Math.max(0, Math.round((bundlePool * (1 + (m === 1 ? 0 : bundleGrowth)) + migBundle) * (1 - churn)));
 
-      cameraPool = Math.max(0, Math.round(cameraPool * (1 - churn)));
-      smhPool = Math.max(0, Math.round(smhPool * (1 - churn)));
-      bundlePool = Math.max(0, Math.round(bundlePool * (1 - churn)));
+      // allocate new additions among tariffs by adoption
+      const allocCam = distributeByAdoption(newCloudAcc + migCam, "camera", tariffs);
+      const allocSmh = distributeByAdoption(migSmh, "smarthome", tariffs);
+      const allocBundle = distributeByAdoption(migBundle, "bundle", tariffs);
+      const newByTariff: Record<string, number> = {};
+      for (const k in allocCam) newByTariff[k] = (newByTariff[k] || 0) + allocCam[k];
+      for (const k in allocSmh) newByTariff[k] = (newByTariff[k] || 0) + allocSmh[k];
+      for (const k in allocBundle) newByTariff[k] = (newByTariff[k] || 0) + allocBundle[k];
+
+      // churn + upgrade/downgrade + add
+      const nextMap: Record<string, number> = {};
+      for (const t of tariffs) {
+        const id = t.id;
+        const actPrev = nextActiveByTariff[id] || 0;
+        const churned = Math.round((t.forecast?.churn || 0) * actPrev);
+        let stay = Math.max(0, actPrev - churned);
+        const upTo = t.forecast?.upgradeTo || null;
+        const upCnt = Math.round((t.forecast?.upgradeRate || 0) * stay);
+        const dnTo = t.forecast?.downgradeTo || null;
+        const dnCnt = Math.round((t.forecast?.downgradeRate || 0) * stay);
+        stay = Math.max(0, stay - upCnt - dnCnt);
+        nextMap[id] = (nextMap[id] || 0) + stay;
+        if (upTo) nextMap[upTo] = (nextMap[upTo] || 0) + upCnt;
+        if (dnTo) nextMap[dnTo] = (nextMap[dnTo] || 0) + dnCnt;
+      }
+      // add new entries
+      for (const id in newByTariff) nextMap[id] = (nextMap[id] || 0) + newByTariff[id];
+      nextActiveByTariff = nextMap;
 
       const activeByFamily = { camera: 0, smarthome: 0, bundle: 0 } as {
         camera: number;
         smarthome: number;
         bundle: number;
       };
+      for (const t of tariffs) {
+        const fam = t.family as "camera" | "smarthome" | "bundle";
+        activeByFamily[fam] += nextActiveByTariff[t.id] || 0;
+      }
 
       const revByTariff: Record<string, number> = {};
       const costByTariff: Record<string, number> = {};
@@ -196,10 +249,6 @@ export function useTariffForecast(opts: {
         profitByTariff[id] = profit;
       }
 
-      for (const t of tariffs) {
-        const fam = t.family as "camera" | "smarthome" | "bundle";
-        activeByFamily[fam] += nextActiveByTariff[t.id] || 0;
-      }
       const revenue = Object.values(revByTariff).reduce((s, v) => s + v, 0);
       const cost = Object.values(costByTariff).reduce((s, v) => s + v, 0);
       const profit = revenue - cost;
@@ -219,9 +268,6 @@ export function useTariffForecast(opts: {
           profitByTariff,
         },
       });
-
-      // carry state forward
-      nextActiveByTariff = { ...nextActiveByTariff };
     }
 
     return { rows };
