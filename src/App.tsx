@@ -96,7 +96,7 @@ const thCls = "py-2 px-2 whitespace-nowrap text-xs leading-tight text-gray-600";
 const tdNumCls = "px-2 text-right";
 const tdTextCls = "px-2";
 
-const APP_VERSION = "v-forecast-link-1";
+const APP_VERSION = "v-forecast-link-2";
 
 export default function App() {
   // ---------- Global inputs ----------
@@ -1529,7 +1529,7 @@ export default function App() {
 
         {tab === "forecast" && (
           <>
-            <Section title="Как работает прогноз (для друзей)">
+            <Section title="Как работает прогноз">
               <div className="text-sm text-gray-700 space-y-2">
                 <p>
                   Прогноз считает по месяцам: сколько у нас активных по тарифам,
