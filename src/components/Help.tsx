@@ -19,7 +19,7 @@ export default function Help({ text }: { text: string }) {
         ref={ref}
         type="button"
         className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-[10px] font-semibold cursor-help select-none"
-        aria-label="Подсказка"
+        aria-label="Подсказка — нажми или наведи"
         title={text}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}

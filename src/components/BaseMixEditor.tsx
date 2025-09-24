@@ -70,7 +70,7 @@ export default function BaseMixEditor({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <div className="text-sm font-medium">Группа:</div>
+        <div className="text-sm font-medium">Группа тарифов:</div>
         <div className="bg-white rounded-xl border border-gray-200 p-1">
           <button
             className={`px-3 py-1 rounded-lg text-sm ${
@@ -89,7 +89,7 @@ export default function BaseMixEditor({
             Бесплатные
           </button>
         </div>
-        <div className="text-xs text-gray-600">Сумма долей по семейству в выбранной группе = 1</div>
+        <div className="text-xs text-gray-600">В этой группе сумма долей по семейству должна быть 1 — если что, помогу выровнять.</div>
       </div>
       {families.map((f) => {
         const list = tariffs.filter(
@@ -125,7 +125,7 @@ export default function BaseMixEditor({
                 className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs"
                 onClick={() => normalizeFamily(f.key)}
               >
-                Нормализовать
+                Выровнять
               </button>
               <button
                 className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-xs"

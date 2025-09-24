@@ -49,7 +49,7 @@ export default function TariffsEditor({
           className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200"
           onClick={() => setTariffs(JSON.parse(JSON.stringify(defaults)))}
         >
-          Сбросить на дефолт
+          Сбросить к пресету
         </button>
         <button
           className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200"
@@ -84,7 +84,7 @@ export default function TariffsEditor({
         <div className="mb-4">
           <textarea
             className={`${inputCls} w-full h-40 font-mono`}
-            placeholder="Вставьте JSON тарифов"
+            placeholder="Вставь сюда JSON тарифов — и поехали"
             value={importText}
             onChange={(e) => setImportText(e.target.value)}
           />
@@ -148,7 +148,7 @@ export default function TariffsEditor({
                       />
                       <label>
                         Архив, дней
-                        <Help text="Сколько дней хранится запись в архиве" />
+                        <Help text="На сколько дней хочешь хранить записи в архиве." />
                       </label>
                       <input
                         className={inputCls}
@@ -162,7 +162,7 @@ export default function TariffsEditor({
                       />
                       <label>
                         GB cap/камера
-                        <Help text="Жёсткий cap объёма хранения на камеру за период" />
+                        <Help text="Лимит объёма на камеру за период. Всё, что сверху — как перерасход." />
                       </label>
                       <input
                         className={inputCls}
@@ -176,7 +176,7 @@ export default function TariffsEditor({
                       />
                       <label>
                         Оverage ₽/ГБ
-                        <Help text="Стоимость перерасхода (факт − лимит), ₽/ГБ" />
+                        <Help text="Сколько берём за перерасход (факт минус лимит) — ₽ за каждый ГБ." />
                       </label>
                       <input
                         className={inputCls}
@@ -194,7 +194,7 @@ export default function TariffsEditor({
                       </div>
                       <label>
                         Yandex Storage ₽/ГБ·мес
-                        <Help text="Цена хранения на ГБ-месяц для тарифа" />
+                        <Help text="Сколько платим за хранение за ГБ‑месяц. Можешь задать прямо для этого тарифа." />
                       </label>
                       <input
                         className={inputCls}
@@ -212,7 +212,7 @@ export default function TariffsEditor({
                       />
                       <label>
                         Yandex CDN ₽/ГБ
-                        <Help text="Стоимость CDN за ГБ скачиваний" />
+                        <Help text="Цена CDN за каждый ГБ скачиваний. Если не знаешь — оставь базовое." />
                       </label>
                       <input
                         className={inputCls}
@@ -230,7 +230,7 @@ export default function TariffsEditor({
                       />
                       <label>
                         ГБ/день/камера (Motion)
-                        <Help text="Средний объём/день/камера в Motion‑режиме" />
+                        <Help text="Сколько в среднем пишет камера в день при записи по событиям." />
                       </label>
                       <input
                         className={inputCls}
@@ -247,7 +247,7 @@ export default function TariffsEditor({
                         }
                       />
                       <label>
-                        cdnRatio <Help text="Доля скачиваний из CDN (0..1)" />
+                        cdnRatio <Help text="Доля скачиваний из CDN (0..1). Чем больше — тем дороже CDN, но быстрее пользователю." />
                       </label>
                       <input
                         className={inputCls}
@@ -284,7 +284,7 @@ export default function TariffsEditor({
                         }
                       />
                       <label>
-                        CDN × <Help text="Множитель к цене Yandex CDN (по тарифу)" />
+                        CDN × <Help text="Во сколько раз хотим умножить базовую цену CDN именно для этого тарифа." />
                       </label>
                       <input
                         className={inputCls}
@@ -302,7 +302,7 @@ export default function TariffsEditor({
                       />
                       <label>
                         Motion GB ×
-                        <Help text="Множитель к среднему объёму/день/камера" />
+                        <Help text="Насколько умножаем средний объём/день/камера (если тариф активнее/спокойнее среднего)." />
                       </label>
                       <input
                         className={inputCls}
@@ -320,7 +320,7 @@ export default function TariffsEditor({
                       />
                       <label>
                         cdnRatio ×
-                        <Help text="Множитель к доле CDN для тарифа" />
+                        <Help text="Подправь долю CDN именно для этого тарифа, если нужно." />
                       </label>
                       <input
                         className={inputCls}
@@ -402,7 +402,7 @@ export default function TariffsEditor({
                       />
                       <label>
                         Adoption new
-                        <Help text="Доля новых покупателей в сегменте (0..1)" />
+                        <Help text="Какую долю новых пользователей заберёт этот тариф внутри семейства (0..1)." />
                       </label>
                       <input
                         className={inputCls}
@@ -454,7 +454,7 @@ export default function TariffsEditor({
                         ))}
                       </select>
                       <label>
-                        upgradeRate <Help text="Доля, апгрейдящаяся в месяц (0..1)" />
+                        upgradeRate <Help text="Какая доля в среднем апгрейдится за месяц (0..1)." />
                       </label>
                       <input
                         className={inputCls}
@@ -491,7 +491,7 @@ export default function TariffsEditor({
                         ))}
                       </select>
                       <label>
-                        downgradeRate <Help text="Доля, даунгрейдящаяся в месяц (0..1)" />
+                        downgradeRate <Help text="Какая доля уходит на тариф попроще за месяц (0..1)." />
                       </label>
                       <input
                         className={inputCls}
